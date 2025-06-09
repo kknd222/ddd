@@ -40,6 +40,7 @@ export async function generateImages(
 ) {
   const model = getModel(_model);
   logger.info(`使用模型: ${_model} 映射模型: ${model} ${width}x${height} 精细度: ${sampleStrength}`);
+  logger.info('-------------> modified_1 <----------')
 
   const { totalCredit } = await getCredit(refreshToken);
   if (totalCredit <= 0)
