@@ -4,6 +4,7 @@ import Request from "@/lib/request/Request.ts";
 import { generateImages } from "@/api/controllers/images.ts";
 import { tokenSplit } from "@/api/controllers/core.ts";
 import util from "@/lib/util.ts";
+import logger from "@/lib/logger.ts";
 
 export default {
   prefix: "/v1/images",
@@ -21,8 +22,10 @@ export default {
         .validate("headers.authorization", _.isString);
       // refresh_token切分
       const tokens = tokenSplit(request.headers.authorization);
+      logger.info("tokens:", tokens);
       // 随机挑选一个refresh_token
       const token = _.sample(tokens);
+      logger.info("current token:", token);
       const {
         model,
         prompt,
@@ -33,6 +36,7 @@ export default {
         response_format,
       } = request.body;
       const responseFormat = _.defaultTo(response_format, "url");
+      logger.info("responseFormat:", responseFormat);
       const imageUrls = await generateImages(model, prompt, {
         width,
         height,
