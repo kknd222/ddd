@@ -37,10 +37,10 @@ const FAKE_HEADERS = {
   "Last-event-id": "undefined",
   Appid: DEFAULT_ASSISTANT_ID,
   Appvr: VERSION_CODE,
-  Origin: "https://jimeng.jianying.com",
+  Origin: "https://dreamina.capcut.com",
   Pragma: "no-cache",
   Priority: "u=1, i",
-  Referer: "https://jimeng.jianying.com",
+  Referer: "https://dreamina.capcut.com",
   Pf: PLATFORM_CODE,
   "Sec-Ch-Ua":
     '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
