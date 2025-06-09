@@ -151,7 +151,7 @@ export async function request(
   );
   const response = await axios.request({
     method,
-    url: `https://dreamina.capcut.com${uri}`,
+    url: uri.startsWith("https://") ? uri : `https://commerce-api-sg.capcut.com${uri}`,
     params: {
       aid: DEFAULT_ASSISTANT_ID,
       device_platform: "web",
