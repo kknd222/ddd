@@ -40,7 +40,7 @@ jobs:
         file: ./Dockerfile
         push: true
         tags: |
-          vinlic/jimeng-free-api:${{ steps.tag_name.outputs.tag }}
-          vinlic/jimeng-free-api:latest
+          vinlic/dreamina-free-api:${{ steps.tag_name.outputs.tag }}
+          vinlic/dreamina-free-api:latest
         platforms: linux/amd64,linux/arm64
         build-args: TARGETPLATFORM=${{ matrix.platform }}

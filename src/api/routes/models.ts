@@ -11,7 +11,7 @@ export default {
                     {
                         "id": "jimeng",
                         "object": "model",
-                        "owned_by": "jimeng-free-api"
+                        "owned_by": "dreamina-free-api"
                     }
                 ]
             };

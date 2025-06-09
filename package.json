@@ -1,7 +1,7 @@
 {
-  "name": "jimeng-free-api",
+  "name": "dreamina-free-api",
   "version": "0.0.6",
-  "description": "jimeng Free API Server",
+  "description": "dreamina Free API Server",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.mjs",

@@ -1,9 +1,9 @@
-# Jimeng AI Free 服务
+# Dreamina AI Free 服务
 
-[![](https://img.shields.io/github/license/llm-red-team/jimeng-free-api.svg)](LICENSE)
-![](https://img.shields.io/github/stars/llm-red-team/jimeng-free-api.svg)
-![](https://img.shields.io/github/forks/llm-red-team/jimeng-free-api.svg)
-![](https://img.shields.io/docker/pulls/vinlic/jimeng-free-api.svg)
+[![](https://img.shields.io/github/license/llm-red-team/dreamina-free-api.svg)](LICENSE)
+![](https://img.shields.io/github/stars/llm-red-team/dreamina-free-api.svg)
+![](https://img.shields.io/github/forks/llm-red-team/dreamina-free-api.svg)
+![](https://img.shields.io/docker/pulls/vinlic/dreamina-free-api.svg)
 
 支持即梦超强图像生成能力（目前官方每日赠送 66 积分，可生成 66 次），零配置部署，多路 token 支持。
 
@@ -33,7 +33,7 @@ MiniMax（海螺 AI）接口转 API [hailuo-free-api](https://github.com/LLM-Red
 
 ## 目录
 
-- [Jimeng AI Free 服务](#jimeng-ai-free-服务)
+- [Dreamina AI Free 服务](#jimeng-ai-free-服务)
   - [目录](#目录)
   - [免责声明](#免责声明)
   - [接入准备](#接入准备)
@@ -93,25 +93,25 @@ MiniMax（海螺 AI）接口转 API [hailuo-free-api](https://github.com/LLM-Red
 拉取镜像并启动服务
 
 ```shell
-docker run -it -d --init --name jimeng-free-api -p 8000:8000 -e TZ=Asia/Shanghai vinlic/jimeng-free-api:latest
+docker run -it -d --init --name dreamina-free-api -p 8000:8000 -e TZ=Asia/Shanghai vinlic/dreamina-free-api:latest
 ```
 
 查看服务实时日志
 
 ```shell
-docker logs -f jimeng-free-api
+docker logs -f dreamina-free-api
 ```
 
 重启服务
 
 ```shell
-docker restart jimeng-free-api
+docker restart dreamina-free-api
 ```
 
 停止服务
 
 ```shell
-docker stop jimeng-free-api
+docker stop dreamina-free-api
 ```
 
 ### Docker-compose 部署
@@ -120,9 +120,9 @@ docker stop jimeng-free-api
 version: "3"
 
 services:
-  jimeng-free-api:
-    container_name: jimeng-free-api
-    image: vinlic/jimeng-free-api:latest
+  dreamina-free-api:
+    container_name: dreamina-free-api
+    image: vinlic/dreamina-free-api:latest
     restart: always
     ports:
       - "8000:8000"
@@ -152,8 +152,8 @@ services:
 ```shell
 npm i -g vercel --registry http://registry.npmmirror.com
 vercel login
-git clone https://github.com/LLM-Red-Team/jimeng-free-api
-cd jimeng-free-api
+git clone https://github.com/LLM-Red-Team/dreamina-free-api
+cd dreamina-free-api
 vercel --prod
 ```
 
@@ -184,25 +184,25 @@ npm run build
 启动服务
 
 ```shell
-pm2 start dist/index.js --name "jimeng-free-api"
+pm2 start dist/index.js --name "dreamina-free-api"
 ```
 
 查看服务实时日志
 
 ```shell
-pm2 logs jimeng-free-api
+pm2 logs dreamina-free-api
 ```
 
 重启服务
 
 ```shell
-pm2 reload jimeng-free-api
+pm2 reload dreamina-free-api
 ```
 
 停止服务
 
 ```shell
-pm2 stop jimeng-free-api
+pm2 stop dreamina-free-api
 ```
 
 ## 推荐使用客户端
