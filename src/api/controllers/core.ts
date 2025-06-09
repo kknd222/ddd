@@ -145,10 +145,17 @@ export async function request(
   options: AxiosRequestConfig = {}
 ) {
   const token = await acquireToken(refreshToken);
+  const url = uri.startsWith("https://") ? uri : `https://mweb-api-sg.capcut.com${uri}`;
   const deviceTime = util.unixTimestamp();
   const sign = util.md5(
     `9e2c|${uri.slice(-7)}|${PLATFORM_CODE}|${VERSION_CODE}|${deviceTime}||11ac`
   );
+  logger.info(
+    "request function: | token:", token,
+    " | uri:", url,
+    " | sign:", sign,
+    " | deviceTime:", deviceTime
+    )
   const response = await axios.request({
     method,
     url: uri.startsWith("https://") ? uri : `https://mweb-api-sg.capcut.com${uri}`, 
@@ -171,6 +178,7 @@ export async function request(
     validateStatus: () => true,
     ..._.omit(options, "params", "headers"),
   });
+  logger.info("request response:", response)
   // 流式响应直接返回response
   if (options.responseType == "stream") return response;
   return checkResult(response);
