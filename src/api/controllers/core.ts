@@ -13,7 +13,7 @@ import util from "@/lib/util.ts";
 // 模型名称
 const MODEL_NAME = "jimeng";
 // 默认的AgentID
-const DEFAULT_ASSISTANT_ID = "513695";
+const DEFAULT_ASSISTANT_ID = "513641"; 
 // 版本号
 const VERSION_CODE = "5.8.0";
 // 平台代码
@@ -40,7 +40,7 @@ const FAKE_HEADERS = {
   Origin: "https://dreamina.capcut.com",
   Pragma: "no-cache",
   Priority: "u=1, i",
-  Referer: "https://dreamina.capcut.com",
+  Referer: "https://dreamina.capcut.com/",
   Pf: PLATFORM_CODE,
   "Sec-Ch-Ua":
     '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
@@ -48,9 +48,10 @@ const FAKE_HEADERS = {
   "Sec-Ch-Ua-Platform": '"Windows"',
   "Sec-Fetch-Dest": "empty",
   "Sec-Fetch-Mode": "cors",
-  "Sec-Fetch-Site": "same-origin",
+  // "Sec-Fetch-Site": "same-origin", 
+  "Sec-Fetch-Site": "same-site", 
   "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
 };
 // 文件最大大小
 const FILE_MAX_SIZE = 100 * 1024 * 1024;
@@ -73,15 +74,31 @@ export function generateCookie(refreshToken: string) {
   return [
     `_tea_web_id=${WEB_ID}`,
     `is_staff_user=false`,
-    `store-region=cn-gd`,
-    `store-region-src=uid`,
+    // `store-region=cn-gd`,
+    // `store-region-src=uid`,
     `sid_guard=${refreshToken}%7C${util.unixTimestamp()}%7C5184000%7CMon%2C+03-Feb-2025+08%3A17%3A09+GMT`,
     `uid_tt=${USER_ID}`,
     `uid_tt_ss=${USER_ID}`,
     `sid_tt=${refreshToken}`,
     `sessionid=${refreshToken}`,
     `sessionid_ss=${refreshToken}`,
-    `sid_tt=${refreshToken}`
+    // `sid_tt=${refreshToken}`,
+    `passport_csrf_token=66e02984cf31e3afb49f22b04452dd14`,
+    `passport_csrf_token_default=66e02984cf31e3afb49f22b04452dd14`, 
+    // `id_guard=2d579c3c144725e174c0384a01606070%7C1749375521%7C5184000%7CThu%2C+07-Aug-2025+09%3A38%3A41+GMT`, 
+    // `uid_tt=f0b19f1bc5600d6901d64a59003d5a967562d8f7d77fd817af6dd2436ee569d4`, 
+    // `uid_tt_ss=f0b19f1bc5600d6901d64a59003d5a967562d8f7d77fd817af6dd2436ee569d4`, 
+    // `sid_tt=2d579c3c144725e174c0384a01606070`, 
+    // `sessionid=2d579c3c144725e174c0384a01606070`, 
+    // `sessionid_ss=2d579c3c144725e174c0384a01606070`, 
+    `sid_ucp_v1=1.0.0-KDZjMzI5YTMyOTA0MDZhMzU3NDNmZGMwNjZlZjk3NzBlNDk1OTY5OTYKIAiQiI6okMLWomgQobSVwgYY6awfIAwwobSVwgY4CEASEAMaA3NnMSIgMmQ1NzljM2MxNDQ3MjVlMTc0YzAzODRhMDE2MDYwNzA`, 
+    `ssid_ucp_v1=1.0.0-KDZjMzI5YTMyOTA0MDZhMzU3NDNmZGMwNjZlZjk3NzBlNDk1OTY5OTYKIAiQiI6okMLWomgQobSVwgYY6awfIAwwobSVwgY4CEASEAMaA3NnMSIgMmQ1NzljM2MxNDQ3MjVlMTc0YzAzODRhMDE2MDYwNzA`, 
+    `store-idc=alisg`, 
+    `store-country-code=us`, 
+    `store-country-code-src=uid`, 
+    `ttwid=1|10pjOfE81FnILRq5hTj3GrNqLxnVZtIPgTp78bRQH2s|1749459658|cb22e9a7837fd55a9e8d63d3004d51e887dc8f65096ebfbc757fadb83e7ad252`, 
+    `odin_tt=15233dea79af8d509c10dee487f4b351594aee81294cc606d8a80028b71cb3b5535a7e02c2652d77ab7f809a6bf63dc961b94291d9e8d55e626797d4de0df27e`, 
+    `msToken=7HCd6aCsuj5tz4kKLiZbZ1B7KOJAv5BNQKjnS_tX_8ksXvxdNVTA5g3BL8NL-H3TXwSngkqJ0DSMb4e42TOIE-YA864-bmgV86nD0ZaV0o06ibbmgwOnnQipAn1U`
   ].join("; ");
 }
 
@@ -153,7 +170,7 @@ export async function request(
   logger.info(
     "request function: | token:", token,
     " | uri:", url,
-    " | sign:", sign,
+    " | sign:", sign, 
     " | deviceTime:", deviceTime
     )
   const response = await axios.request({
@@ -178,7 +195,7 @@ export async function request(
     validateStatus: () => true,
     ..._.omit(options, "params", "headers"),
   });
-  logger.info("request response:", response)
+  // logger.info("request response:", response)
   // 流式响应直接返回response
   if (options.responseType == "stream") return response;
   return checkResult(response);
