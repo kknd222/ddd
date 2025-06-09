@@ -85,9 +85,9 @@ export function generateCookie(refreshToken: string) {
     `store-idc=alisg`, 
     `store-country-code=us`, 
     `store-country-code-src=uid`, 
-    `ttwid=1|10pjOfE81FnILRq5hTj3GrNqLxnVZtIPgTp78bRQH2s|1749459658|cb22e9a7837fd55a9e8d63d3004d51e887dc8f65096ebfbc757fadb83e7ad252`, 
-    `odin_tt=15233dea79af8d509c10dee487f4b351594aee81294cc606d8a80028b71cb3b5535a7e02c2652d77ab7f809a6bf63dc961b94291d9e8d55e626797d4de0df27e`, 
-    `msToken=7HCd6aCsuj5tz4kKLiZbZ1B7KOJAv5BNQKjnS_tX_8ksXvxdNVTA5g3BL8NL-H3TXwSngkqJ0DSMb4e42TOIE-YA864-bmgV86nD0ZaV0o06ibbmgwOnnQipAn1U`
+    // `ttwid=1|10pjOfE81FnILRq5hTj3GrNqLxnVZtIPgTp78bRQH2s|1749459658|cb22e9a7837fd55a9e8d63d3004d51e887dc8f65096ebfbc757fadb83e7ad252`, 
+    // `odin_tt=15233dea79af8d509c10dee487f4b351594aee81294cc606d8a80028b71cb3b5535a7e02c2652d77ab7f809a6bf63dc961b94291d9e8d55e626797d4de0df27e`, 
+    // `msToken=7HCd6aCsuj5tz4kKLiZbZ1B7KOJAv5BNQKjnS_tX_8ksXvxdNVTA5g3BL8NL-H3TXwSngkqJ0DSMb4e42TOIE-YA864-bmgV86nD0ZaV0o06ibbmgwOnnQipAn1U`
   ].join("; ");
 }
 
