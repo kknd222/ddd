@@ -132,7 +132,7 @@ export async function generateImages(
   let status = 20, failCode, item_list = [];
   while (status === 20) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    const result = await request("post", "https://mweb-api-sg.capcut.com/mweb/v1/get_history_by_ids", refreshToken, {
+    const result = await request("post", "/mweb/v1/get_history_by_ids", refreshToken, {
       data: {
         history_ids: [historyId],
         image_info: {
