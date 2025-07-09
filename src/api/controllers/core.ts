@@ -163,7 +163,7 @@ export async function request(
     params: {
       aid: DEFAULT_ASSISTANT_ID,
       device_platform: "web",
-      region: "SGP",
+      region: "cn",
       web_id: WEB_ID,
       ...(options.params || {}),
     },
