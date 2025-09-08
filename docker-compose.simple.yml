@@ -1,0 +1,13 @@
+version: '3.8'
+
+# 简化版本 - 快速启动用
+services:
+  dreamina-free-api:
+    build: .
+    container_name: dreamina-free-api-simple
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
