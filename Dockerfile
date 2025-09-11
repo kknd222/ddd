@@ -47,6 +47,10 @@ COPY --from=build-stage --chown=nodejs:nodejs /app/package.json ./package.json
 COPY --from=build-stage --chown=nodejs:nodejs /app/configs ./configs
 COPY --from=build-stage --chown=nodejs:nodejs /app/public ./public
 
+# 修复权限问题：将 /app 目录的所有权赋予 nodejs 用户
+# 这样应用在运行时就有权限创建 logs 等子目录
+RUN chown -R nodejs:nodejs /app
+
 # 切换到非root用户
 USER nodejs
 
