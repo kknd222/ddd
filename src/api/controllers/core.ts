@@ -167,6 +167,10 @@ export async function request(
     " | sign:", sign, 
     " | deviceTime:", deviceTime
     )
+
+  // 智能Cookie处理：如果token看起来像一个完整的Cookie，则直接使用，否则生成一个。
+  const cookie = token.includes('sid_guard=') ? token : generateCookie(token);
+
   const response = await axios.request({
     method,
     url: uri.startsWith("https://") ? uri : `https://mweb-api-sg.capcut.com${uri}`, 
@@ -179,7 +183,7 @@ export async function request(
     },
     headers: {
       ...FAKE_HEADERS,
-      Cookie: generateCookie(token),
+      Cookie: cookie,
       "Device-Time": deviceTime,
       Sign: sign,
       "Sign-Ver": "1",
