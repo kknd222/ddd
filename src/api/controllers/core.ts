@@ -189,7 +189,7 @@ export async function request(
     validateStatus: () => true,
     ..._.omit(options, "params", "headers"),
   });
-  // logger.info("request response:", response)
+  logger.info("request response:", response.data)
   // 流式响应直接返回response
   if (options.responseType == "stream") return response;
   return checkResult(response);
