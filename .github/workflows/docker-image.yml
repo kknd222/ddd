@@ -1,46 +1,54 @@
-name: Build and Push Docker Image
+# .github/workflows/docker-image.yml
+name: 构建并推送 Docker 镜像
 
+# 任何分支的 push 事件都会触发此工作流程
 on:
-  release:
-    types: [created]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag Name'
-        required: true
+  push:
+    branches:
+      - '**'
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-    - uses: actions/checkout@v2
+      - name: 检出代码
+        uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v1
+      - name: 提取 Docker 元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/dreamina-free-api
+          tags: |
+            # 为 git 分支事件启用 ref 类型的标签 (e.g. "main")
+            type=ref,event=branch
+            # 为 git 标签事件启用 ref 类型的标签 (e.g. "v1.0.0")
+            type=ref,event=tag
+            # 启用 sha 类型的标签 (e.g. "a1b2c3d")
+            type=sha
 
-    - name: Login to Docker Hub
-      uses: docker/login-action@v1
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: Set tag name
-      id: tag_name
-      run: |
-        if [ "${{ github.event_name }}" = "release" ]; then
-          echo "::set-output name=tag::${GITHUB_REF#refs/tags/}"
-        elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "::set-output name=tag::${{ github.event.inputs.tag }}"
-        fi
+      - name: 登录到 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
-    - name: Build and push Docker image with Release tag
-      uses: docker/build-push-action@v2
-      with:
-        context: .
-        file: ./Dockerfile
-        push: true
-        tags: |
-          vinlic/dreamina-free-api:${{ steps.tag_name.outputs.tag }}
-          vinlic/dreamina-free-api:latest
-        platforms: linux/amd64,linux/arm64
-        build-args: TARGETPLATFORM=${{ matrix.platform }}
+      - name: 构建并推送 Docker 镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          # 启用缓存以加快构建速度
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
