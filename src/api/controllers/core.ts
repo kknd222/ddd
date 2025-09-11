@@ -189,7 +189,7 @@ export async function request(
     validateStatus: () => true,
     ..._.omit(options, "params", "headers"),
   });
-  logger.info("request response:", response.data)
+  // logger.info("request response:", response.data)
   // 流式响应直接返回response
   if (options.responseType == "stream") return response;
   return checkResult(response);
@@ -271,7 +271,10 @@ export async function uploadFile(
 export function checkResult(result: AxiosResponse) {
   const { ret, errmsg, data } = result.data;
   if (!_.isFinite(Number(ret))) return result.data;
-  if (ret === '0') return data;
+  if (ret === '0') {
+    // 健壮性修复：如果响应成功但没有data字段，则返回整个响应体
+    return data !== undefined ? data : result.data;
+  }
   if (ret === '5000')
     throw new APIException(EX.API_IMAGE_GENERATION_INSUFFICIENT_POINTS, `[无法生成图像]: 即梦积分可能不足，${errmsg}`);
   throw new APIException(EX.API_REQUEST_FAILED, `[请求jimeng失败]: ${errmsg}`);
