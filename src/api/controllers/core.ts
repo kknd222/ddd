@@ -7,6 +7,7 @@ import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
 import APIException from "@/lib/exceptions/APIException.ts";
 import EX from "@/api/consts/exceptions.ts";
 import { createParser } from "eventsource-parser";
+import { AuthContext } from "./chat.ts";
 import logger from "@/lib/logger.ts";
 import util from "@/lib/util.ts";
 
@@ -89,10 +90,10 @@ export function generateCookie(refreshToken: string) {
 /**
  * 获取积分信息
  *
- * @param refreshToken 用于刷新access_token的refresh_token
+ * @param auth 认证上下文
  */
-export async function getCredit(refreshToken: string) {
-  const data = await request("POST", "/commerce/v1/benefits/user_credit_history", refreshToken, {
+export async function getCredit(auth: AuthContext) {
+  const data = await request("POST", "/commerce/v1/benefits/user_credit_history", auth, {
     data: {
       "count": 20,
       "cursor": "0"
@@ -125,11 +126,11 @@ export async function getCredit(refreshToken: string) {
 /**
  * 接收今日积分
  *
- * @param refreshToken 用于刷新access_token的refresh_token
+ * @param auth 认证上下文
  */
-export async function receiveCredit(refreshToken: string) {
+export async function receiveCredit(auth: AuthContext) {
   logger.info("正在收取今日积分...")
-  const { cur_total_credits, receive_quota  } = await request("POST", "/commerce/v1/benefits/credit_receive", refreshToken, {
+  const { cur_total_credits, receive_quota  } = await request("POST", "/commerce/v1/benefits/credit_receive", auth, {
     data: {
       time_zone: "Asia/Shanghai"
     },
@@ -152,24 +153,16 @@ export async function receiveCredit(refreshToken: string) {
 export async function request(
   method: string,
   uri: string,
-  refreshToken: string,
+  auth: AuthContext,
   options: AxiosRequestConfig = {}
 ) {
-  const token = await acquireToken(refreshToken);
   const url = uri.startsWith("https://") ? uri : `https://jimeng.jianying.com${uri}`;
-  const deviceTime = util.unixTimestamp();
-  const sign = util.md5(
-    `9e2c|${uri.slice(-7)}|${PLATFORM_CODE}|${VERSION_CODE}|${deviceTime}||11ac`
-  );
-  logger.info(
-    "request function: | token:", token,
-    " | uri:", url,
-    " | sign:", sign, 
-    " | deviceTime:", deviceTime
-    )
 
-  // 智能Cookie处理：如果token看起来像一个完整的Cookie，则直接使用，否则生成一个。
-  const cookie = token.includes('sid_guard=') ? token : generateCookie(token);
+  logger.info(
+    "request function: | uri:", url,
+    " | sign:", auth.sign,
+    " | deviceTime:", auth.device_time
+    )
 
   const response = await axios.request({
     method,
@@ -183,9 +176,9 @@ export async function request(
     },
     headers: {
       ...FAKE_HEADERS,
-      Cookie: cookie,
-      "Device-Time": deviceTime,
-      Sign: sign,
+      Cookie: auth.cookie,
+      "Device-Time": auth.device_time,
+      Sign: auth.sign,
       "Sign-Ver": "1",
       ...(options.headers || {}),
     },
@@ -297,11 +290,11 @@ export function tokenSplit(authorization: string) {
 /**
  * 获取Token存活状态
  */
-export async function getTokenLiveStatus(refreshToken: string) {
+export async function getTokenLiveStatus(auth: AuthContext) {
   const result = await request(
     "POST",
     "/passport/account/info/v2",
-    refreshToken,
+    auth,
     {
       params: {
         account_sdk_source: "web",

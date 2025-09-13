@@ -7,6 +7,12 @@ import logger from "@/lib/logger.ts";
 import util from "@/lib/util.ts";
 import { generateImages, DEFAULT_MODEL } from "./images.ts";
 
+export type AuthContext = {
+    cookie: string;
+    sign: string;
+    device_time: string;
+}
+
 // 最大重试次数
 const MAX_RETRY_COUNT = 3;
 // 重试延迟
@@ -38,7 +44,7 @@ function parseModel(model: string) {
  */
 export async function createCompletion(
   messages: any[],
-  refreshToken: string,
+  auth: AuthContext,
   _model = DEFAULT_MODEL,
   retryCount = 0
 ) {
@@ -56,7 +62,7 @@ export async function createCompletion(
         width,
         height,
       },
-      refreshToken
+      auth
     );
 
     return {
@@ -85,7 +91,7 @@ export async function createCompletion(
       logger.warn(`Try again after ${RETRY_DELAY / 1000}s...`);
       return (async () => {
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
-        return createCompletion(messages, refreshToken, _model, retryCount + 1);
+        return createCompletion(messages, auth, _model, retryCount + 1);
       })();
     }
     throw err;
@@ -102,7 +108,7 @@ export async function createCompletion(
  */
 export async function createCompletionStream(
   messages: any[],
-  refreshToken: string,
+  auth: AuthContext,
   _model = DEFAULT_MODEL,
   retryCount = 0
 ) {
@@ -139,7 +145,7 @@ export async function createCompletionStream(
       model,
       messages[messages.length - 1].content,
       { width, height },
-      refreshToken
+      auth
     )
       .then((imageUrls) => {
         for (let i = 0; i < imageUrls.length; i++) {
@@ -216,7 +222,7 @@ export async function createCompletionStream(
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
         return createCompletionStream(
           messages,
-          refreshToken,
+          auth,
           _model,
           retryCount + 1
         );

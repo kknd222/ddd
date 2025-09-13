@@ -37,21 +37,21 @@ export async function generateImages(
     sampleStrength?: number;
     negativePrompt?: string;
   },
-  refreshToken: string
+  auth: AuthContext
 ) {
   const model = getModel(_model);
   logger.info(`使用模型: ${_model} 映射模型: ${model} ${width}x${height} 精细度: ${sampleStrength}`);
   logger.info('-------------> modified_1 <----------')
 
-  const { totalCredit } = await getCredit(refreshToken);
+  const { totalCredit } = await getCredit(auth);
   if (totalCredit <= 0)
-    await receiveCredit(refreshToken);
+    await receiveCredit(auth);
 
   const componentId = util.uuid();
   const { aigc_data } = await request(
     "post",
     "/mweb/v1/aigc_draft/generate",
-    refreshToken,
+    auth,
     {
       params: {
         babi_param: encodeURIComponent(
@@ -134,7 +134,7 @@ export async function generateImages(
   let status = 20, failCode, item_list = [];
   while (status === 20) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    const result = await request("post", "/mweb/v1/get_history_by_ids", refreshToken, {
+    const result = await request("post", "/mweb/v1/get_history_by_ids", auth, {
       data: {
         history_ids: [historyId],
         image_info: {
