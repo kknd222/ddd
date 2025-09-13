@@ -50,7 +50,7 @@ export async function generateImages(
   const componentId = util.uuid();
   const { aigc_data } = await request(
     "post",
-    "https://mweb-api-sg.capcut.com/mweb/v1/aigc_draft/generate",
+    "/mweb/v1/aigc_draft/generate",
     refreshToken,
     {
       params: {
