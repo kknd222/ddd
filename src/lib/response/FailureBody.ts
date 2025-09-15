@@ -9,13 +9,17 @@ import HTTP_STATUS_CODES from '../http-status-codes.ts';
 export default class FailureBody extends Body {
     
     constructor(error: APIException | Exception | Error, _data?: any) {
-        let errcode, errmsg, data = _data, httpStatusCode = HTTP_STATUS_CODES.OK;;
+        let errcode, errmsg, data = _data, httpStatusCode = HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR;
         if(_.isString(error))
             error = new Exception(EX.SYSTEM_ERROR, error);
         else if(error instanceof APIException || error instanceof Exception)
             ({ errcode, errmsg, data, httpStatusCode } = error);
         else if(_.isError(error))
         ({ errcode, errmsg, data, httpStatusCode } = new Exception(EX.SYSTEM_ERROR, error.message));
+        // 若异常未显式设置 HTTP 状态码，则强制为 500
+        if (!_.isFinite(httpStatusCode) || Number(httpStatusCode) < 400) {
+            httpStatusCode = HTTP_STATUS_CODES.INTERNAL_SERVER_ERROR;
+        }
         super({
             code: errcode || -1,
             message: errmsg || 'Internal error',

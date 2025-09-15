@@ -29,6 +29,35 @@ function parseModel(model: string) {
 }
 
 /**
+ * 解析 OpenAI 风格消息，提取文本与首个图片 URL
+ */
+function parseOpenAIMessageContent(content: any): { text: string; image?: string } {
+  if (_.isString(content)) return { text: content };
+  if (_.isArray(content)) {
+    let textParts: string[] = [];
+    let image: string | undefined;
+    for (const item of content) {
+      if (image) {
+        // 已提取到首图，仅继续累积文本
+        if (item?.type === "text" && _.isString(item?.text)) textParts.push(item.text);
+        continue;
+      }
+      if (item?.type === "text" && _.isString(item?.text)) textParts.push(item.text);
+      else if (
+        item?.type === "image_url" &&
+        item?.image_url &&
+        _.isString(item?.image_url?.url)
+      ) {
+        image = item.image_url.url;
+      }
+    }
+    return { text: textParts.join(""), image };
+  }
+  if (_.isObject(content) && _.isString((content as any).content)) return { text: (content as any).content };
+  return { text: "" };
+}
+
+/**
  * 同步对话补全
  *
  * @param messages 参考gpt系列消息格式，多轮对话请完整提供上下文
@@ -49,12 +78,17 @@ export async function createCompletion(
     const { model, width, height } = parseModel(_model);
     logger.info(messages);
 
+    // 解析最后一条用户消息，支持 text + image_url
+    const last = messages[messages.length - 1];
+    const { text: promptText, image } = parseOpenAIMessageContent(last?.content);
+
     const imageUrls = await generateImages(
       model,
-      messages[messages.length - 1].content,
+      promptText,
       {
         width,
         height,
+        image,
       },
       refreshToken
     );
@@ -135,12 +169,10 @@ export async function createCompletionStream(
         "\n\n"
     );
 
-    generateImages(
-      model,
-      messages[messages.length - 1].content,
-      { width, height },
-      refreshToken
-    )
+    const last = messages[messages.length - 1];
+    const { text: promptText, image } = parseOpenAIMessageContent(last?.content);
+
+    generateImages(model, promptText, { width, height, image }, refreshToken)
       .then((imageUrls) => {
         for (let i = 0; i < imageUrls.length; i++) {
           const url = imageUrls[i];

@@ -18,6 +18,8 @@ export default {
         .validate("body.width", v => _.isUndefined(v) || _.isFinite(v))
         .validate("body.height", v => _.isUndefined(v) || _.isFinite(v))
         .validate("body.sample_strength", v => _.isUndefined(v) || _.isFinite(v))
+        // 兼容 OpenAI 风格的 image 输入（字符串 / 对象 / 数组）
+        .validate("body.image", v => _.isUndefined(v) || _.isString(v) || _.isObject(v) || _.isArray(v))
         .validate("body.response_format", v => _.isUndefined(v) || _.isString(v))
         .validate("headers.authorization", _.isString);
       // refresh_token切分
@@ -36,12 +38,30 @@ export default {
         response_format,
       } = request.body;
       const responseFormat = _.defaultTo(response_format, "url");
+      // 解析 image 字段：支持字符串 / { type: 'image_url', image_url: { url } } / 数组
+      const extractImage = (input: any): string | undefined => {
+        if (!input) return undefined;
+        if (_.isString(input)) return input;
+        if (_.isArray(input)) return extractImage(input[0]);
+        if (_.isObject(input)) {
+          if (
+            input.type === "image_url" &&
+            input.image_url &&
+            _.isString(input.image_url.url)
+          )
+            return input.image_url.url;
+          if (_.isString((input as any).url)) return (input as any).url;
+        }
+        return undefined;
+      };
+      const imageInput = extractImage(request.body.image);
       logger.info("responseFormat:", responseFormat);
       const imageUrls = await generateImages(model, prompt, {
         width,
         height,
         sampleStrength,
         negativePrompt,
+        image: imageInput,
       }, token);
       let data = [];
       if (responseFormat == "b64_json") {

@@ -4,7 +4,9 @@ WORKDIR /app
 
 COPY . /app
 
-RUN npm install --registry https://registry.npmmirror.com/ --ignore-engines && npm run build
+RUN npm ci --registry https://registry.npmmirror.com/ --ignore-engines || \
+    npm install --registry https://registry.npmmirror.com/ --ignore-engines \
+  && npm run build
 
 FROM node:lts-alpine
 

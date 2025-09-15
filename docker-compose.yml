@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  dreamina-free-api:
+    container_name: dreamina-free-api
+    # 本地源码构建镜像
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      - TZ=Asia/Shanghai
+      # 可覆盖服务运行环境/端口
+      # - SERVER_ENV=dev
+      # - SERVER_HOST=0.0.0.0
+      # - SERVER_PORT=8000
+    ports:
+      - "8000:8000"
