@@ -1,35 +1,7 @@
 # Dreamina AI Free 服务
-
-[![](https://img.shields.io/github/license/llm-red-team/dreamina-free-api.svg)](LICENSE)
-![](https://img.shields.io/github/stars/llm-red-team/dreamina-free-api.svg)
-![](https://img.shields.io/github/forks/llm-red-team/dreamina-free-api.svg)
-![](https://img.shields.io/docker/pulls/vinlic/dreamina-free-api.svg)
-
-支持即梦超强图像生成能力（目前官方每日赠送 66 积分，可生成 66 次），零配置部署，多路 token 支持。
+支持即梦超强图像生成能力，零配置部署，多路 token 支持。
 
 与 OpenAI 接口完全兼容。
-
-还有以下十个 free-api 欢迎关注：
-
-Moonshot AI（Kimi.ai）接口转 API [kimi-free-api](https://github.com/LLM-Red-Team/kimi-free-api)
-
-阶跃星辰 (跃问 StepChat) 接口转 API [step-free-api](https://github.com/LLM-Red-Team/step-free-api)
-
-阿里通义 (Qwen) 接口转 API [qwen-free-api](https://github.com/LLM-Red-Team/qwen-free-api)
-
-智谱 AI (智谱清言) 接口转 API [glm-free-api](https://github.com/LLM-Red-Team/glm-free-api)
-
-秘塔 AI (Metaso) 接口转 API [metaso-free-api](https://github.com/LLM-Red-Team/metaso-free-api)
-
-字节跳动（豆包）接口转 API [doubao-free-api](https://github.com/LLM-Red-Team/doubao-free-api)
-
-讯飞星火（Spark）接口转 API [spark-free-api](https://github.com/LLM-Red-Team/spark-free-api)
-
-MiniMax（海螺 AI）接口转 API [hailuo-free-api](https://github.com/LLM-Red-Team/hailuo-free-api)
-
-深度求索（DeepSeek）接口转 API [deepseek-free-api](https://github.com/LLM-Red-Team/deepseek-free-api)
-
-聆心智能 (Emohaa) 接口转 API [emohaa-free-api](https://github.com/LLM-Red-Team/emohaa-free-api)
 
 ## 目录
 
@@ -46,7 +18,6 @@ MiniMax（海螺 AI）接口转 API [hailuo-free-api](https://github.com/LLM-Red
   - [原生部署](#原生部署)
   - [推荐使用客户端](#推荐使用客户端)
   - [接口列表](#接口列表)
-    - [对话补全](#对话补全)
     - [图像生成](#图像生成)
   - [Star History](#star-history)
 
@@ -66,7 +37,19 @@ MiniMax（海螺 AI）接口转 API [hailuo-free-api](https://github.com/LLM-Red
 
 从 [即梦](https://jimeng.jianying.com/) 获取 sessionid
 
+如使用国际版：从 [即梦国际版](https://dreamina.capcut.com/) 获取 `sessionid`，同样在浏览器开发者工具的 Application > Cookies 中查看；国际区通常无需追加区域后缀，直接使用即可：
+
+```
+Authorization: Bearer sessionid
+```
+
 进入即梦登录账号，然后 F12 打开开发者工具，从 Application > Cookies 中找到`sessionid`的值，这将作为 Authorization 的 Bearer Token 值：`Authorization: Bearer sessionid`
+
+中国大陆（CN）区域账号/网络请在 token 末尾追加区域后缀以走 CN 域：
+
+```
+Authorization: Bearer sessionid:cn
+```
 
 ![example0](./doc/example-0.png)
 
@@ -75,6 +58,10 @@ MiniMax（海螺 AI）接口转 API [hailuo-free-api](https://github.com/LLM-Red
 你可以通过提供多个账号的 sessionid 并使用`,`拼接提供：
 
 `Authorization: Bearer sessionid1,sessionid2,sessionid3`
+
+如涉及不同区域，可单独为某个账号追加区域后缀，例如：
+
+`Authorization: Bearer sessionid_cn:cn,sessionid_us`
 
 每次请求服务会从中挑选一个。
 
@@ -88,12 +75,9 @@ MiniMax（海螺 AI）接口转 API [hailuo-free-api](https://github.com/LLM-Red
 
 ## Docker 部署
 
-请准备一台具有公网 IP 的服务器（外网）并将 8000 端口开放。
-
-拉取镜像并启动服务
-
 ```shell
-docker run -it -d --init --name dreamina-free-api -p 8000:8000 -e TZ=Asia/Shanghai vinlic/dreamina-free-api:latest
+docker build -t dreamina-free-api:local .
+docker run -it -d --init --name dreamina-free-api -p 8000:8000 -e TZ=Asia/Shanghai dreamina-free-api:local
 ```
 
 查看服务实时日志
@@ -114,7 +98,7 @@ docker restart dreamina-free-api
 docker stop dreamina-free-api
 ```
 
-### Docker-compose 部署
+### Docker-compose 部署（本地构建）
 
 ```yaml
 version: "3"
@@ -122,12 +106,30 @@ version: "3"
 services:
   dreamina-free-api:
     container_name: dreamina-free-api
-    image: vinlic/dreamina-free-api:latest
+    # 本地源码构建镜像
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
     ports:
       - "8000:8000"
     environment:
       - TZ=Asia/Shanghai
+```
+
+使用仓库根目录已提供的 `docker-compose.yml` 快速启动：
+
+```bash
+docker compose up -d
+```
+
+（提示）本项目无远程镜像，Compose 方案默认从本地源码构建镜像。
+
+### 本地手动构建镜像
+
+```bash
+docker build -t dreamina-free-api:local .
+docker run -it -d --init --name dreamina-free-api -p 8000:8000 -e TZ=Asia/Shanghai dreamina-free-api:local
 ```
 
 ### Render 部署
@@ -205,21 +207,9 @@ pm2 reload dreamina-free-api
 pm2 stop dreamina-free-api
 ```
 
-## 推荐使用客户端
-
-使用以下二次开发客户端接入 free-api 系列项目更快更简单，支持文档/图像上传！
-
-由 [Clivia](https://github.com/Yanyutin753/lobe-chat) 二次开发的 LobeChat [https://github.com/Yanyutin753/lobe-chat](https://github.com/Yanyutin753/lobe-chat)
-
-由 [时光@](https://github.com/SuYxh) 二次开发的 ChatGPT Web [https://github.com/SuYxh/chatgpt-web-sea](https://github.com/SuYxh/chatgpt-web-sea)
-
 ## 接口列表
 
-目前支持与 openai 兼容的 `/v1/chat/completions` 接口，可自行使用与 openai 或其他兼容的客户端接入接口，或者使用 [dify](https://dify.ai/) 等线上服务接入使用。
-
-### 对话补全
-
-对话补全接口，与 openai 的 [chat-completions-api](https://platform.openai.com/docs/guides/text-generation/chat-completions-api) 兼容。
+目前支持与 openai 兼容的 `/v1/chat/completions` 接口，可自行使用与 openai 或其他兼容的客户端接入接口，或者使用 [dify](https://dify.ai/) 等线上服务接入使用。该接口已内置图像生成：发送文本（可选携带首个 `image_url`）后，返回内容为包含多张图片链接的 Markdown 文本。
 
 **POST /v1/chat/completions**
 
@@ -246,7 +236,7 @@ Authorization: Bearer [sessionid]
 }
 ```
 
-响应数据：
+响应数据（`message.content` 为 Markdown 图片列表）：
 
 ```json
 {
@@ -258,7 +248,7 @@ Authorization: Bearer [sessionid]
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "![image_0](https://p6-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/3b381b78fe2f46aaac952753d6d7faa7~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=zcGIxn%2BBIxI%2BTYj2RU4BflvSox8%3D&format=.jpeg)\n![image_1](https://p6-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/370482573be7454381cb38cc650b5c5f~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=FqnNJruwTWxrhrRGwhQvGKtHOSE%3D&format=.jpeg)\n![image_2](https://p9-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/e1b0248c9b0e4fbea8a479c5677a1610~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=N7wjAj2JWdA5YE9B3Bld7COu5jk%3D&format=.jpeg)\n![image_3](https://p9-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/9da2e379ea8d4c2bb24dc30180223cf9~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=vhwI8xtHW%2FcQT%2BCAPue%2FCye12Hs%3D&format=.jpeg)\n"
+        "content": "![image_0](https://.../image0.jpeg)\n![image_1](https://.../image1.jpeg)\n![image_2](https://.../image2.jpeg)\n![image_3](https://.../image3.jpeg)\n"
       },
       "finish_reason": "stop"
     }
@@ -274,7 +264,7 @@ Authorization: Bearer [sessionid]
 
 ### 图像生成
 
-图像生成接口，与 openai 的 [images-create-api](https://platform.openai.com/docs/api-reference/images/create) 兼容。
+图像生成接口，与 openai 的 [images-create-api](https://platform.openai.com/docs/api-reference/images/create) 兼容；同时 `/v1/chat/completions` 亦可直接生成图片并返回 Markdown 图片链接。
 
 **POST /v1/images/generations**
 
@@ -284,22 +274,18 @@ header 需要设置 Authorization 头部：
 Authorization: Bearer [sessionid]
 ```
 
-请求数据：
+请求数据（默认返回 URL，如需 Base64 请设置 `response_format: "b64_json"`）：
 
 ```json
 {
-  // jimeng-3.0（默认） /  jimeng-2.1 / jimeng-2.0-pro / jimeng-2.0 / jimeng-1.4 / jimeng-xl-pro
   "model": "jimeng-3.0",
-  // 提示词，必填
   "prompt": "少女祈祷中...",
-  // 反向提示词，默认空字符串
-  "negativePrompt": "",
-  // 图像宽度，默认1024
+  "negative_prompt": "",
   "width": 1024,
-  // 图像高度，默认1024
   "height": 1024,
-  // 精细度，取值范围0-1，默认0.5
-  "sample_strength": 0.5
+  "sample_strength": 0.5,
+  "image": "https://example.com/ref.jpg",
+  "response_format": "url"
 }
 ```
 
@@ -324,7 +310,3 @@ Authorization: Bearer [sessionid]
   ]
 }
 ```
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=LLM-Red-Team/doubao-free-api&type=Date)](https://star-history.com/#LLM-Red-Team/doubao-free-api&Date)
