@@ -16,6 +16,20 @@ import { CronJob } from "cron";
 
 import HTTP_STATUS_CODE from "./http-status-codes.ts";
 
+// 配置axios代理
+if (process.env.PROXY) {
+  const proxyUrl = new URL(process.env.PROXY);
+  axios.defaults.proxy = {
+    host: proxyUrl.hostname,
+    port: parseInt(proxyUrl.port),
+    auth: proxyUrl.username ? {
+      username: proxyUrl.username,
+      password: proxyUrl.password
+    } : undefined,
+    protocol: proxyUrl.protocol
+  };
+}
+
 const autoIdMap = new Map();
 
 const util = {

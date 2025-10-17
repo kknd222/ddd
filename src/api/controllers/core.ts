@@ -12,6 +12,20 @@ import { createParser } from "eventsource-parser";
 import logger from "@/lib/logger.ts";
 import util from "@/lib/util.ts";
 
+// 配置axios代理
+if (process.env.PROXY) {
+  const proxyUrl = new URL(process.env.PROXY);
+  axios.defaults.proxy = {
+    host: proxyUrl.hostname,
+    port: parseInt(proxyUrl.port),
+    auth: proxyUrl.username ? {
+      username: proxyUrl.username,
+      password: proxyUrl.password
+    } : undefined,
+    protocol: proxyUrl.protocol
+  };
+}
+
 // 模型名称
 const MODEL_NAME = "jimeng";
 // 默认的AgentID（海外）
@@ -170,7 +184,7 @@ export async function ensureMsToken(refreshToken: string) {
 
   const cookieStr = `sessionid=${refreshToken}; sessionid_ss=${refreshToken}`;
 
-  // 从 Accept-Language 推导 Lan（尽量不硬编码）
+  // 从 Accept-Language 推导 Lan
   const acceptLang = "zh-CN,zh;q=0.9";
   const lan = acceptLang.split(",")[0]?.split("-")[0] || "en";
 

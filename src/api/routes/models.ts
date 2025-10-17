@@ -23,6 +23,12 @@ export default {
             // 国际区模型列表
             const INTL = [
                 {
+                    id: 'jimeng-4.0',
+                    model_name: '图片 4.0',
+                    model_tip: '支持多参考图、系列组图生成',
+                    model_req_key: 'high_aes_general_v40',
+                },
+                {
                     id: 'jimeng-3.1',
                     model_name: 'Image 3.1',
                     model_tip: 'Delivers striking visuals with rich, versatile aesthetics.',

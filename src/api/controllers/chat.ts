@@ -20,11 +20,45 @@ const RETRY_DELAY = 5000;
  */
 function parseModel(model: string) {
   const [_model, size] = model.split(":");
+  
+  if (!size) {
+    // 4.0 模型默认使用 2k 尺寸
+    const is4_0Model = _model.includes("4.0");
+    // 3.x 模型默认使用 2k 尺寸
+    const is3_xModel = _model.includes("3.");
+    
+    let defaultDimension = 1024;
+    if (is4_0Model) {
+      defaultDimension = 4096;
+    } else if (is3_xModel) {
+      defaultDimension = 2048;
+    }
+    
+    return {
+      model: _model,
+      width: defaultDimension,
+      height: defaultDimension,
+    };
+  }
+
+  // 处理 1k, 2k, 4k 格式
+  const kMatch = /^(\d+)k$/i.exec(size);
+  if (kMatch) {
+    const k = parseInt(kMatch[1]);
+    const dimension = k * 1024;
+    return {
+      model: _model,
+      width: dimension,
+      height: dimension,
+    };
+  }
+
+  // 处理传统的 widthxheight 格式
   const [_, width, height] = /(\d+)[\W\w](\d+)/.exec(size) ?? [];
   return {
     model: _model,
-    width: size ? Math.ceil(parseInt(width) / 2) * 2 : 1024,
-    height: size ? Math.ceil(parseInt(height) / 2) * 2 : 1024,
+    width: width ? Math.ceil(parseInt(width) / 2) * 2 : 1024,
+    height: height ? Math.ceil(parseInt(height) / 2) * 2 : 1024,
   };
 }
 

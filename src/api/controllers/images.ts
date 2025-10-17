@@ -19,6 +19,7 @@ const DA_VERSION = "3.2.8";
 const WEB_VERSION = "6.6.0";
 const MODEL_MAP = {
   // 与示例保持一致（去掉 _fangzhou 后缀）
+  "jimeng-4.0": "high_aes_general_v40",
   "jimeng-3.1": "high_aes_general_v30l_art:general_v3.0_18b",
   "jimeng-3.0": "high_aes_general_v30l:general_v3.0_18b",
   "jimeng-2.1": "high_aes_general_v21_L:general_v2.1_L",
@@ -46,8 +47,8 @@ export async function generateImages(
   _model: string,
   prompt: string,
   {
-    width = 1024,
-    height = 1024,
+    width = 2048,
+    height = 2048,
     sampleStrength = 0.5,
     negativePrompt = "",
     image,
@@ -60,18 +61,26 @@ export async function generateImages(
   },
   refreshToken: string
 ) {
+  // 分辨率类型（与示例靠拢，可为空）
+  const resolutionType = ((): string | undefined => {
+    if (width === 1024 && height === 1024) return "1k";
+    if (width === 2048 && height === 2048) return "2k";
+    if (width === 4096 && height === 4096) return "4k";
+    return undefined;
+  })();
+
   // 每次生成图片前先请求 user_info 以获取新的 msToken
   await ensureMsToken(refreshToken);
   const regionCfg = getRegionConfig(refreshToken);
   const isCN = (regionCfg?.countryCode || "").toUpperCase() === "CN";
   const model = getRegionAwareModel(_model, isCN);
-  logger.info(`使用模型: ${_model} 映射模型: ${model} ${width}x${height} 精细度: ${sampleStrength}`);
+  logger.info(`使用模型: ${_model} 映射模型: ${model} ${width}x${height} 分辨率: ${resolutionType} 精细度: ${sampleStrength}`);
   logger.info('-------------> modified_1 <----------')
 
   // 图片输入支持：国际区仅 jimeng-3.0；CN 区支持 jimeng-3.0 与 jimeng-4.0
-  const allowImage = isCN ? (_model === "jimeng-3.0" || _model === "jimeng-4.0") : (_model === "jimeng-3.0");
+  const allowImage = _model === "jimeng-3.0" || _model === "jimeng-4.0";
   if (image && !allowImage) {
-    throw new APIException(EX.API_REQUEST_PARAMS_INVALID, isCN ? "该模型不支持图片，请使用 jimeng-3.0 或 jimeng-4.0" : "该模型不支持图片，请使用 jimeng-3.0");
+    throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "该模型不支持图片，请使用 jimeng-3.0 或 jimeng-4.0");
   }
 
   const { totalCredit } = await getCredit(refreshToken);
@@ -287,8 +296,11 @@ export async function generateImages(
       status = entry.status ?? entry.task?.status ?? status;
       failCode = entry.fail_code ?? entry.task?.fail_code;
       item_list = entry.item_list ?? entry.task?.item_list ?? [];
-      // 状态含义：50完成、30失败；其余（如20/40/41/42/43等）继续轮询
-      if (status === 50) break;
+      const totalCount = entry.total_image_count ?? 1;
+      const finishedCount = entry.finished_image_count ?? 0;
+      // 状态含义：50完成、30失败、45处理中；根据实际图片数量判断是否完成
+      // 当 status=50 或 (status=45 且所有图片已生成) 时认为完成
+      if (status === 50 || (item_list.length > 0 && finishedCount >= totalCount)) break;
       if (status === 30) {
         if (failCode === '2038') throw new APIException(EX.API_CONTENT_FILTERED);
         throw new APIException(EX.API_IMAGE_GENERATION_FAILED);
@@ -309,19 +321,12 @@ export async function generateImages(
     });
   }
 
-  // 分辨率类型（与示例靠拢，可为空）
-  const resolutionType = ((): string | undefined => {
-    if (width === 1024 && height === 1024) return "1k";
-    if (width === 2048 && height === 2048) return "2k";
-    return undefined;
-  })();
-
   const submitId = util.uuid();
   const generateId = submitId;
 
   // 如有图片，先上传，便于后续在服务端调试使用（具体引用字段待对齐）
   let uploadedImage: { storeUri: string; width?: number; height?: number; mimeType?: string } | null = null;
-  if (image && _model === "jimeng-3.0") {
+  if (image && allowImage) {
     try {
       // 允许 base64 或 URL
       uploadedImage = await uploadFile(image, refreshToken, false, country);
@@ -512,7 +517,8 @@ export async function generateImages(
   // 选择历史查询主机与查询键（US 使用 submit_id，其他使用 history_id）
   const historyApiHost = regionCfg?.mwebHost || "https://mweb-api-sg.capcut.com";
   const pollKey = country === "US" ? submitId : historyId;
-  while (status === 20) {
+  let guardCount = 0;
+  while (true) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     const result = await request("post", `${historyApiHost}/mweb/v1/get_history_by_ids`, refreshToken, {
       params: {
@@ -547,15 +553,33 @@ export async function generateImages(
     });
     if (!result[pollKey])
       throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录不存在");
-    status = result[pollKey].status;
-    failCode = result[pollKey].fail_code;
-    item_list = result[pollKey].item_list;
-  }
-  if (status === 30) {
-    if (failCode === '2038')
-      throw new APIException(EX.API_CONTENT_FILTERED);
-    else
+    const entry = result[pollKey];
+    const pollInfo = entry?.queue_info?.polling_config;
+    logger.info(`[国际区] history poll: status=${entry.status}, itemCount=${(entry.item_list || []).length}, totalCount=${entry.total_image_count ?? 1}, finishedCount=${entry.finished_image_count ?? 0}`);
+
+    status = entry.status;
+    failCode = entry.fail_code;
+    item_list = entry.item_list || [];
+    const totalCount = entry.total_image_count ?? 1;
+    const finishedCount = entry.finished_image_count ?? 0;
+
+    // 状态含义：50完成、30失败、45/20等处理中；根据实际图片数量判断是否完成
+    // 当 status=50 或 (所有图片已生成) 时认为完成
+    if (status === 50 || (item_list.length > 0 && finishedCount >= totalCount)) break;
+    if (status === 30) {
+      if (failCode === '2038') throw new APIException(EX.API_CONTENT_FILTERED);
       throw new APIException(EX.API_IMAGE_GENERATION_FAILED);
+    }
+
+    // 动态调整下一次轮询间隔
+    const nextInterval = Number(pollInfo?.interval_seconds);
+    if (nextInterval && nextInterval > 1 && nextInterval < 120) {
+      await new Promise((resolve) => setTimeout(resolve, nextInterval * 1000));
+    }
+
+    if (++guardCount > 120) {
+      throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "轮询超时");
+    }
   }
   return item_list.map((item) => {
     if(!item?.image?.large_images?.[0]?.image_url)
