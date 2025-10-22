@@ -186,50 +186,34 @@ export async function createCompletionStream(
       return stream;
     }
 
-    stream.write(
-      "data: " +
-        JSON.stringify({
-          id: util.uuid(),
-          model: _model || model,
-          object: "chat.completion.chunk",
-          choices: [
-            {
-              index: 0,
-              delta: { role: "assistant", content: "🎨 图像生成中，请稍候..." },
-              finish_reason: null,
-            },
-          ],
-        }) +
-        "\n\n"
-    );
-
+    // 解析最后一条用户消息
     const last = messages[messages.length - 1];
     const { text: promptText, image } = parseOpenAIMessageContent(last?.content);
 
-    generateImages(model, promptText, { width, height, image }, refreshToken)
-      .then((imageUrls) => {
-        for (let i = 0; i < imageUrls.length; i++) {
-          const url = imageUrls[i];
-          stream.write(
-            "data: " +
-              JSON.stringify({
-                id: util.uuid(),
-                model: _model || model,
-                object: "chat.completion.chunk",
-                choices: [
-                  {
-                    index: i + 1,
-                    delta: {
-                      role: "assistant",
-                      content: `![image_${i}](${url})\n`,
-                    },
-                    finish_reason: i < imageUrls.length - 1 ? null : "stop",
-                  },
-                ],
-              }) +
-              "\n\n"
-          );
-        }
+    // 先生成图片，如果失败则抛出异常（在流开始写入之前）
+    try {
+      const imageUrls = await generateImages(model, promptText, { width, height, image }, refreshToken);
+
+      // 图片生成成功后，开始写入流
+      stream.write(
+        "data: " +
+          JSON.stringify({
+            id: util.uuid(),
+            model: _model || model,
+            object: "chat.completion.chunk",
+            choices: [
+              {
+                index: 0,
+                delta: { role: "assistant", content: "" },
+                finish_reason: null,
+              },
+            ],
+          }) +
+          "\n\n"
+      );
+
+      for (let i = 0; i < imageUrls.length; i++) {
+        const url = imageUrls[i];
         stream.write(
           "data: " +
             JSON.stringify({
@@ -238,42 +222,25 @@ export async function createCompletionStream(
               object: "chat.completion.chunk",
               choices: [
                 {
-                  index: imageUrls.length + 1,
+                  index: i + 1,
                   delta: {
                     role: "assistant",
-                    content: "图像生成完成！",
+                    content: `![image_${i}](${url})\n`,
                   },
-                  finish_reason: "stop",
+                  finish_reason: i < imageUrls.length - 1 ? null : "stop",
                 },
               ],
             }) +
             "\n\n"
         );
-        stream.end("data: [DONE]\n\n");
-      })
-      .catch((err) => {
-        stream.write(
-          "data: " +
-            JSON.stringify({
-              id: util.uuid(),
-              model: _model || model,
-              object: "chat.completion.chunk",
-              choices: [
-                {
-                  index: 1,
-                  delta: {
-                    role: "assistant",
-                    content: `生成图片失败: ${err.message}`,
-                  },
-                  finish_reason: "stop",
-                },
-              ],
-            }) +
-            "\n\n"
-        );
-        stream.end("data: [DONE]\n\n");
-      });
-    return stream;
+      }
+
+      stream.end("data: [DONE]\n\n");
+      return stream;
+    } catch (err) {
+      // 图片生成失败，不写入流，直接抛出异常
+      throw err;
+    }
   })().catch((err) => {
     if (retryCount < MAX_RETRY_COUNT) {
       logger.error(`Response error: ${err.stack}`);

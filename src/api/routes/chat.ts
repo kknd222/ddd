@@ -22,8 +22,8 @@ export default {
             const token = _.sample(tokens);
             const { model, messages, stream } = request.body;
             if (stream) {
-                const stream = await createCompletionStream(messages, token, model);
-                return new Response(stream, {
+                const streamResponse = await createCompletionStream(messages, token, model);
+                return new Response(streamResponse, {
                     type: "text/event-stream"
                 });
             }
