@@ -80,7 +80,7 @@ export async function generateImages(
   // 图片输入支持：国际区仅 jimeng-3.0；CN 区支持 jimeng-3.0 与 jimeng-4.0
   const allowImage = _model === "jimeng-3.0" || _model === "jimeng-4.0";
   if (image && !allowImage) {
-    throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "该模型不支持图片，请使用 jimeng-3.0 或 jimeng-4.0");
+    throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "该模型不支持图片，请使用 jimeng-3.0 或 jimeng-4.0").setHTTPStatusCode(400);
   }
 
   const { totalCredit } = await getCredit(refreshToken);
@@ -266,6 +266,7 @@ export async function generateImages(
     const historyId = aigc_data.history_record_id;
     if (!historyId)
       throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
+
     let status = 20, failCode, item_list: any[] = [];
     let guardCount = 0;
     while (true) {
@@ -513,6 +514,7 @@ export async function generateImages(
   const historyId = aigc_data.history_record_id;
   if (!historyId)
     throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
+
   let status = 20, failCode, item_list = [];
   // 选择历史查询主机与查询键（US 使用 submit_id，其他使用 history_id）
   const historyApiHost = regionCfg?.mwebHost || "https://mweb-api-sg.capcut.com";

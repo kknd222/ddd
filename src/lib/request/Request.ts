@@ -64,7 +64,8 @@ export default class Request {
         }
         catch (err) {
             logger.warn(`Params ${key} invalid:`, err);
-            throw new APIException(EX.API_REQUEST_PARAMS_INVALID, message || `Params ${key} invalid`);
+            // 参数校验失败统一返回 400
+            throw new APIException(EX.API_REQUEST_PARAMS_INVALID, message || `Params ${key} invalid`).setHTTPStatusCode(400);
         }
         return this;
     }

@@ -4,6 +4,28 @@ import fs from 'fs-extra';
 import minimist from 'minimist';
 import _ from 'lodash';
 
+// 预加载 .env 文件到 process.env（轻量解析）
+try {
+    const dotenvPath = path.join(path.resolve(), '.env');
+    if (fs.pathExistsSync(dotenvPath)) {
+        const content = fs.readFileSync(dotenvPath, 'utf-8');
+        content.split(/\r?\n/).forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) return;
+            const m = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+            if (!m) return;
+            const key = m[1];
+            let val = m[2];
+            // 去除引号并处理内联注释
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+                val = val.slice(1, -1);
+            }
+            // 若未显式设置到环境，才写入，避免覆盖外部传入变量
+            if (process.env[key] === undefined) process.env[key] = val;
+        });
+    }
+} catch {}
+
 const cmdArgs = minimist(process.argv.slice(2));  //获取命令行参数
 const envVars = process.env;  //获取环境变量
 

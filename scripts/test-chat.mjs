@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 function parseArgs(argv) {
-  const args = { host: 'http://localhost:8000', model: 'jimeng-3.0', message: '一只狗', stream: false };
+  const args = { host: 'http://localhost:8777', model: 'agent', message: '讲个20字的笑话', stream: true };
   const rest = [];
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
@@ -17,7 +17,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  console.log('Usage: node scripts/test-chat.mjs <token> [--host http://localhost:8000] [--model jimeng-3.0] [--message "一只狗"] [--stream]');
+  console.log('Usage: node scripts/test-chat.mjs <token> [--host http://localhost:8777] [--model agent] [--message "讲个20字的笑话"] [--stream]');
 }
 
 async function main() {
@@ -51,4 +51,3 @@ async function main() {
 }
 
 main();
-

@@ -318,7 +318,7 @@ export async function getCredit(refreshToken: string) {
  * @param refreshToken 用于刷新access_token的refresh_token
  */
 export async function receiveCredit(refreshToken: string) {
-  logger.info("正在收取今日积分...")
+  logger.info("正在收取今日积分...");
   const cfg = getRegionConfig(refreshToken);
   const commerceHost = cfg?.commerceDomain || "https://commerce-api-sg.capcut.com";
   try {
@@ -327,12 +327,17 @@ export async function receiveCredit(refreshToken: string) {
         time_zone: "Asia/Shanghai"
       },
     });
-    console.log("data", data)
+
+    const { is_first_receive, receive_quota, has_popup } = data;
+    const firstReceiveText = is_first_receive ? "今日首次领取" : "今日已领取过";
+
+    logger.info(`✅ 积分领取成功: 获得 ${receive_quota} 积分 (${firstReceiveText})`);
+
+    return data;
   } catch (error) {
-    console.log("error", error)
+    logger.error(`❌ 积分领取失败: ${error.message || error}`);
+    throw error;
   }
-  // logger.info(`\n今日${receive_quota}积分收取成功\n剩余积分: ${cur_total_credits}`);
-  // return 0;
 }
 
 /**
@@ -411,6 +416,7 @@ export async function request(
     params: paramsObj,
     headers: {
       ...FAKE_HEADERS,
+      Did: String(DEVICE_ID),
       Cookie: generateCookie(token, regionParam || getRegionConfig(refreshToken)?.countryCode),
       "Device-Time": deviceTime,
       // US 域名也接受 Sign，这里统一附带

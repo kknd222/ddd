@@ -174,87 +174,41 @@ export async function createCompletionStream(
   _model = DEFAULT_MODEL,
   retryCount = 0
 ) {
-  return (async () => {
-    const { model, width, height } = parseModel(_model);
-    logger.info(messages);
+  // 生成成功后再返回 SSE，失败走 500
+  const { model, width, height } = parseModel(_model);
+  logger.info(messages);
 
-    const stream = new PassThrough();
+  if (messages.length === 0) {
+    throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "消息不能为空");
+  }
 
-    if (messages.length === 0) {
-      logger.warn("消息为空，返回空流");
-      stream.end("data: [DONE]\n\n");
-      return stream;
-    }
+  const last = messages[messages.length - 1];
+  const { text: promptText, image } = parseOpenAIMessageContent(last?.content);
 
-    // 解析最后一条用户消息
-    const last = messages[messages.length - 1];
-    const { text: promptText, image } = parseOpenAIMessageContent(last?.content);
+  // 先生成图片，失败会抛异常返回 500
+  const imageUrls = await generateImages(model, promptText, { width, height, image }, refreshToken);
 
-    // 先生成图片，如果失败则抛出异常（在流开始写入之前）
-    try {
-      const imageUrls = await generateImages(model, promptText, { width, height, image }, refreshToken);
+  const stream = new PassThrough();
 
-      // 图片生成成功后，开始写入流
-      stream.write(
-        "data: " +
-          JSON.stringify({
-            id: util.uuid(),
-            model: _model || model,
-            object: "chat.completion.chunk",
-            choices: [
-              {
-                index: 0,
-                delta: { role: "assistant", content: "" },
-                finish_reason: null,
-              },
-            ],
-          }) +
-          "\n\n"
-      );
-
-      for (let i = 0; i < imageUrls.length; i++) {
-        const url = imageUrls[i];
-        stream.write(
-          "data: " +
-            JSON.stringify({
-              id: util.uuid(),
-              model: _model || model,
-              object: "chat.completion.chunk",
-              choices: [
-                {
-                  index: i + 1,
-                  delta: {
-                    role: "assistant",
-                    content: `![image_${i}](${url})\n`,
-                  },
-                  finish_reason: i < imageUrls.length - 1 ? null : "stop",
-                },
-              ],
-            }) +
-            "\n\n"
-        );
-      }
-
-      stream.end("data: [DONE]\n\n");
-      return stream;
-    } catch (err) {
-      // 图片生成失败，不写入流，直接抛出异常
-      throw err;
-    }
-  })().catch((err) => {
-    if (retryCount < MAX_RETRY_COUNT) {
-      logger.error(`Response error: ${err.stack}`);
-      logger.warn(`Try again after ${RETRY_DELAY / 1000}s...`);
-      return (async () => {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY));
-        return createCompletionStream(
-          messages,
-          refreshToken,
-          _model,
-          retryCount + 1
-        );
-      })();
-    }
-    throw err;
-  });
+  for (let i = 0; i < imageUrls.length; i++) {
+    const url = imageUrls[i];
+    stream.write(
+      "data: " +
+        JSON.stringify({
+          id: util.uuid(),
+          model: _model || model,
+          object: "chat.completion.chunk",
+          choices: [
+            {
+              index: i,
+              delta: { role: "assistant", content: `![image_${i}](${url})\n` },
+              finish_reason: i < imageUrls.length - 1 ? null : "stop",
+            },
+          ],
+        }) +
+        "\n\n"
+    );
+  }
+  stream.end("data: [DONE]\n\n");
+  return stream;
 }

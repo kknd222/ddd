@@ -58,6 +58,12 @@ export default {
                     model_tip: 'Versatile for all styles. Supports natural language prompts.',
                     model_req_key: 'high_aes_v14_dreamina:general_v1.4',
                 },
+                {
+                    id: 'agent',
+                    model_name: 'Agent',
+                    model_tip: 'CapCut conversation SSE proxy (OpenAI-style stream).',
+                    model_req_key: 'capcut_conversation_v2',
+                },
             ].map(m => ({ ...COMMON_FIELDS, ...m }));
 
             // CN 区域模型列表（对齐到现有格式）
@@ -97,6 +103,12 @@ export default {
                     model_name: '图片 2.0',
                     model_tip: '文字遵循高，支持图片参考能力',
                     model_req_key: 'high_aes_general_v20:general_v2.0',
+                },
+                {
+                    id: 'agent',
+                    model_name: '会话代理',
+                    model_tip: '代理 CapCut 会话 SSE，返回 OpenAI 风格流式。',
+                    model_req_key: 'capcut_conversation_v2',
                 },
             ].map(m => ({ ...COMMON_FIELDS, ...m }));
 

@@ -17,8 +17,9 @@
     - [Vercel 部署](#vercel-部署)
   - [原生部署](#原生部署)
   - [推荐使用客户端](#推荐使用客户端)
-  - [接口列表](#接口列表)
+ - [接口列表](#接口列表)
     - [图像生成](#图像生成)
+    - [CapCut 会话代理](#capcut-会话代理)
   - [Star History](#star-history)
 
 ## 免责声明
@@ -288,6 +289,30 @@ Authorization: Bearer [sessionid]
   "response_format": "url"
 }
 ```
+
+### CapCut 会话代理（模型名：agent）
+
+通过 OpenAI 兼容的 `/v1/chat/completions` 代理 CapCut 会话 SSE，返回 OpenAI 风格的 `chat.completion` 或流式 `chat.completion.chunk`。
+
+请求示例（流式）：
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H 'Authorization: Bearer <sessionid>' \
+  -H 'Content-Type: application/json' \
+  -N \
+  -d '{
+    "model": "agent",
+    "stream": true,
+    "messages": [
+      {"role":"user","content":"讲个20字的笑话"}
+    ]
+  }'
+```
+
+说明：
+- 当 `model` 为 `agent` 时，服务将调用 CapCut `/mweb/v1/creation_agent/v2/conversation` 并把 SSE 转换为 OpenAI 风格事件。
+- 其余 `model` 使用内置即梦图像生成逻辑。
 
 响应数据：
 
