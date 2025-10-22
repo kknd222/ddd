@@ -52,15 +52,20 @@ export async function generateImages(
     sampleStrength = 0.5,
     negativePrompt = "",
     image,
+    images,
   }: {
     width?: number;
     height?: number;
     sampleStrength?: number;
     negativePrompt?: string;
-    image?: string; // URL or data URL (base64)
+    image?: string; // URL or data URL (base64) - deprecated, use images instead
+    images?: string[]; // Array of URLs or data URLs (base64)
   },
   refreshToken: string
 ) {
+  // 统一处理图片参数：优先使用 images 数组，兼容旧的 image 参数
+  const imageList = images || (image ? [image] : undefined);
+
   // 分辨率类型（与示例靠拢，可为空）
   const resolutionType = ((): string | undefined => {
     if (width === 1024 && height === 1024) return "1k";
@@ -79,7 +84,7 @@ export async function generateImages(
 
   // 图片输入支持：国际区仅 jimeng-3.0；CN 区支持 jimeng-3.0 与 jimeng-4.0
   const allowImage = _model === "jimeng-3.0" || _model === "jimeng-4.0";
-  if (image && !allowImage) {
+  if (imageList && imageList.length > 0 && !allowImage) {
     throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "该模型不支持图片，请使用 jimeng-3.0 或 jimeng-4.0").setHTTPStatusCode(400);
   }
 
@@ -101,23 +106,26 @@ export async function generateImages(
     const cnModel = "high_aes_general_v40";
 
     // 如携带图片，先上传，支持 CN 区域 blend
-    let uploadedImageCN: { storeUri: string; width?: number; height?: number; mimeType?: string } | null = null;
-    if (image) {
+    let uploadedImagesCN: Array<{ storeUri: string; width?: number; height?: number; mimeType?: string }> = [];
+    if (imageList && imageList.length > 0) {
       try {
-        uploadedImageCN = await uploadFile(image, refreshToken, false, country);
-        logger.info("[CN] 参考图已上传:", uploadedImageCN.storeUri);
+        // 并行上传所有图片
+        const uploadPromises = imageList.map(img => uploadFile(img, refreshToken, false, country));
+        uploadedImagesCN = await Promise.all(uploadPromises);
+        logger.info(`[CN] 参考图已上传 ${uploadedImagesCN.length} 张:`, uploadedImagesCN.map(img => img.storeUri));
       } catch (e) {
         logger.warn("[CN] 参考图上传失败，忽略图片输入: ", e?.message || e);
       }
     }
 
     // 组件与核心参数（根据是否有参考图选择 generate 或 blend）
+    const hasImages = uploadedImagesCN.length > 0;
     const baseCoreParamCN: any = {
       type: "",
       id: util.uuid(),
       model: cnModel,
-      prompt: uploadedImageCN && !/^##/.test(prompt) ? `##${prompt}` : prompt,
-      ...(uploadedImageCN ? {} : { negative_prompt: negativePrompt }),
+      prompt: hasImages && !/^##/.test(prompt) ? `##${prompt}` : prompt,
+      ...(hasImages ? {} : { negative_prompt: negativePrompt }),
       seed: Math.floor(Math.random() * 100000000) + 2500000000,
       sample_strength: sampleStrength,
       image_ratio: 1,
@@ -131,14 +139,14 @@ export async function generateImages(
       intelligent_ratio: false,
     };
 
-    const imgFormatCN = (() => {
-      const mt = uploadedImageCN?.mimeType || "";
+    const imgFormatsCN = uploadedImagesCN.map(img => {
+      const mt = img?.mimeType || "";
       if (/jpeg|jpg/i.test(mt)) return "jpeg";
       if (/png/i.test(mt)) return "png";
       if (/gif/i.test(mt)) return "gif";
       if (/webp/i.test(mt)) return "webp";
       return "jpeg";
-    })();
+    });
 
     const componentForGenerateCN = {
       type: "image_base_component",
@@ -173,39 +181,39 @@ export async function generateImages(
           min_version: BLEND_MIN_VERSION,
           min_features: [],
           core_param: baseCoreParamCN,
-          ability_list: [
-            {
-              type: "",
-              id: util.uuid(),
-              name: "byte_edit",
-              image_uri_list: [uploadedImageCN?.storeUri],
-              image_list: [
-                {
-                  type: "image",
-                  id: util.uuid(),
-                  source_from: "upload",
-                  platform_type: 1,
-                  name: "",
-                  image_uri: uploadedImageCN?.storeUri,
-                  uri: uploadedImageCN?.storeUri,
-                  ...(uploadedImageCN?.width && uploadedImageCN?.height
-                    ? { width: uploadedImageCN.width, height: uploadedImageCN.height, format: imgFormatCN }
-                    : { format: imgFormatCN }),
-                },
-              ],
-              strength: sampleStrength,
-            },
-          ],
-          prompt_placeholder_info_list: [
-            { type: "", id: util.uuid(), ability_index: 0 },
-          ],
+          ability_list: uploadedImagesCN.map((uploadedImg, idx) => ({
+            type: "",
+            id: util.uuid(),
+            name: "byte_edit",
+            image_uri_list: [uploadedImg.storeUri],
+            image_list: [
+              {
+                type: "image",
+                id: util.uuid(),
+                source_from: "upload",
+                platform_type: 1,
+                name: "",
+                image_uri: uploadedImg.storeUri,
+                uri: uploadedImg.storeUri,
+                ...(uploadedImg.width && uploadedImg.height
+                  ? { width: uploadedImg.width, height: uploadedImg.height, format: imgFormatsCN[idx] }
+                  : { format: imgFormatsCN[idx] }),
+              },
+            ],
+            strength: sampleStrength,
+          })),
+          prompt_placeholder_info_list: uploadedImagesCN.map((_, idx) => ({
+            type: "",
+            id: util.uuid(),
+            ability_index: idx,
+          })),
           postedit_param: { type: "", id: util.uuid(), generate_type: 0 },
         },
       },
     } as any;
 
-    const componentListCN = [uploadedImageCN ? componentForBlendCN : componentForGenerateCN];
-    const draftMinVersionCN = uploadedImageCN ? BLEND_MIN_VERSION : DRAFT_VERSION;
+    const componentListCN = [hasImages ? componentForBlendCN : componentForGenerateCN];
+    const draftMinVersionCN = hasImages ? BLEND_MIN_VERSION : DRAFT_VERSION;
     logger.info("[CN] generate params:", JSON.stringify({
       region: "cn",
       da_version: CN_DA_VERSION,
@@ -213,6 +221,7 @@ export async function generateImages(
       web_version: WEB_VERSION,
       model: cnModel,
       size: { w: cnWidth, h: cnHeight, resolution_type: cnResolutionType || null },
+      imageCount: uploadedImagesCN.length,
     }));
     const submitIdCN = util.uuid();
     const { aigc_data } = await request(
@@ -246,7 +255,7 @@ export async function generateImages(
             generateCount: 1,
             enterFrom: "click",
             generateId: submitIdCN,
-            isRegenerate: !!uploadedImageCN,
+            isRegenerate: !!hasImages,
           }),
           draft_content: JSON.stringify({
             type: "draft",
@@ -326,12 +335,13 @@ export async function generateImages(
   const generateId = submitId;
 
   // 如有图片，先上传，便于后续在服务端调试使用（具体引用字段待对齐）
-  let uploadedImage: { storeUri: string; width?: number; height?: number; mimeType?: string } | null = null;
-  if (image && allowImage) {
+  let uploadedImages: Array<{ storeUri: string; width?: number; height?: number; mimeType?: string }> = [];
+  if (imageList && imageList.length > 0 && allowImage) {
     try {
-      // 允许 base64 或 URL
-      uploadedImage = await uploadFile(image, refreshToken, false, country);
-      logger.info("参考图已上传:", uploadedImage.storeUri);
+      // 并行上传所有图片
+      const uploadPromises = imageList.map(img => uploadFile(img, refreshToken, false, country));
+      uploadedImages = await Promise.all(uploadPromises);
+      logger.info(`参考图已上传 ${uploadedImages.length} 张:`, uploadedImages.map(img => img.storeUri));
     } catch (e) {
       logger.warn("参考图上传失败，忽略图片输入: ", e?.message || e);
     }
@@ -345,13 +355,14 @@ export async function generateImages(
   };
   const { width: adjWidth, height: adjHeight } = adjustDimsForRegion(width, height);
 
+  const hasImagesIntl = uploadedImages.length > 0;
   const baseCoreParam = {
     type: "",
     id: util.uuid(),
     model,
-    prompt: uploadedImage && !/^##/.test(prompt) ? `##${prompt}` : prompt,
+    prompt: hasImagesIntl && !/^##/.test(prompt) ? `##${prompt}` : prompt,
     // 仅文生图携带负向词，blend 不强制
-    ...(uploadedImage ? {} : { negative_prompt: negativePrompt }),
+    ...(hasImagesIntl ? {} : { negative_prompt: negativePrompt }),
     seed: Math.floor(Math.random() * 100000000) + 2500000000,
     sample_strength: sampleStrength,
     image_ratio: 1,
@@ -389,14 +400,14 @@ export async function generateImages(
     },
   };
 
-  const imgFormat = (() => {
-    const mt = uploadedImage?.mimeType || "";
+  const imgFormats = uploadedImages.map(img => {
+    const mt = img?.mimeType || "";
     if (/jpeg|jpg/i.test(mt)) return "jpeg";
     if (/png/i.test(mt)) return "png";
     if (/gif/i.test(mt)) return "gif";
     if (/webp/i.test(mt)) return "webp";
     return "jpeg"; // 默认按示例给 jpeg
-  })();
+  });
 
   const componentForBlend = {
     type: "image_base_component",
@@ -421,44 +432,44 @@ export async function generateImages(
         min_version: BLEND_MIN_VERSION,
         min_features: [],
         core_param: baseCoreParam,
-        ability_list: [
-          {
-            type: "",
-            id: util.uuid(),
-            name: "byte_edit",
-            image_uri_list: [uploadedImage?.storeUri],
-            image_list: [
-              {
-                type: "image",
-                id: util.uuid(),
-                source_from: "upload",
-                platform_type: 1,
-                name: "",
-                image_uri: uploadedImage?.storeUri,
-                uri: uploadedImage?.storeUri,
-                // 尽可能补齐宽高与格式
-                ...(uploadedImage?.width && uploadedImage?.height
-                  ? { width: uploadedImage.width, height: uploadedImage.height, format: imgFormat }
-                  : { format: imgFormat }),
-              },
-            ],
-            strength: sampleStrength,
-          },
-        ],
-        prompt_placeholder_info_list: [
-          { type: "", id: util.uuid(), ability_index: 0 },
-        ],
+        ability_list: uploadedImages.map((uploadedImg, idx) => ({
+          type: "",
+          id: util.uuid(),
+          name: "byte_edit",
+          image_uri_list: [uploadedImg.storeUri],
+          image_list: [
+            {
+              type: "image",
+              id: util.uuid(),
+              source_from: "upload",
+              platform_type: 1,
+              name: "",
+              image_uri: uploadedImg.storeUri,
+              uri: uploadedImg.storeUri,
+              // 尽可能补齐宽高与格式
+              ...(uploadedImg.width && uploadedImg.height
+                ? { width: uploadedImg.width, height: uploadedImg.height, format: imgFormats[idx] }
+                : { format: imgFormats[idx] }),
+            },
+          ],
+          strength: sampleStrength,
+        })),
+        prompt_placeholder_info_list: uploadedImages.map((_, idx) => ({
+          type: "",
+          id: util.uuid(),
+          ability_index: idx,
+        })),
         postedit_param: { type: "", id: util.uuid(), generate_type: 0 },
       },
     },
   } as any;
 
-  const component_list = [uploadedImage ? componentForBlend : componentForGenerate];
-  const draftMinVersion = uploadedImage ? BLEND_MIN_VERSION : DRAFT_VERSION;
+  const component_list = [hasImagesIntl ? componentForBlend : componentForGenerate];
+  const draftMinVersion = hasImagesIntl ? BLEND_MIN_VERSION : DRAFT_VERSION;
 
   // 根据地区切换域名（US 使用 dreamina-api.us.capcut.com，需要 msToken 作为 query）
   const apiHost = regionCfg?.mwebHost || "https://mweb-api-sg.capcut.com";
-  const webComponentOpenFlag = uploadedImage ? 1 : 0;
+  const webComponentOpenFlag = hasImagesIntl ? 1 : 0;
   const { aigc_data } = await request(
     "post",
     `${apiHost}/mweb/v1/aigc_draft/generate`,
@@ -478,7 +489,7 @@ export async function generateImages(
         },
         submit_id: submitId,
         metrics_extra: JSON.stringify(
-          uploadedImage
+          hasImagesIntl
             ? {
                 promptSource: "custom",
                 generateCount: 1,

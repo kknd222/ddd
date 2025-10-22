@@ -63,29 +63,25 @@ function parseModel(model: string) {
 }
 
 /**
- * 解析 OpenAI 风格消息，提取文本与首个图片 URL
+ * 解析 OpenAI 风格消息，提取文本与所有图片 URL
  */
-function parseOpenAIMessageContent(content: any): { text: string; image?: string } {
+function parseOpenAIMessageContent(content: any): { text: string; images?: string[] } {
   if (_.isString(content)) return { text: content };
   if (_.isArray(content)) {
     let textParts: string[] = [];
-    let image: string | undefined;
+    let images: string[] = [];
     for (const item of content) {
-      if (image) {
-        // 已提取到首图，仅继续累积文本
-        if (item?.type === "text" && _.isString(item?.text)) textParts.push(item.text);
-        continue;
-      }
-      if (item?.type === "text" && _.isString(item?.text)) textParts.push(item.text);
-      else if (
+      if (item?.type === "text" && _.isString(item?.text)) {
+        textParts.push(item.text);
+      } else if (
         item?.type === "image_url" &&
         item?.image_url &&
         _.isString(item?.image_url?.url)
       ) {
-        image = item.image_url.url;
+        images.push(item.image_url.url);
       }
     }
-    return { text: textParts.join(""), image };
+    return { text: textParts.join(""), images: images.length > 0 ? images : undefined };
   }
   if (_.isObject(content) && _.isString((content as any).content)) return { text: (content as any).content };
   return { text: "" };
@@ -114,7 +110,7 @@ export async function createCompletion(
 
     // 解析最后一条用户消息，支持 text + image_url
     const last = messages[messages.length - 1];
-    const { text: promptText, image } = parseOpenAIMessageContent(last?.content);
+    const { text: promptText, images } = parseOpenAIMessageContent(last?.content);
 
     const imageUrls = await generateImages(
       model,
@@ -122,7 +118,7 @@ export async function createCompletion(
       {
         width,
         height,
-        image,
+        images,
       },
       refreshToken
     );
@@ -183,10 +179,10 @@ export async function createCompletionStream(
   }
 
   const last = messages[messages.length - 1];
-  const { text: promptText, image } = parseOpenAIMessageContent(last?.content);
+  const { text: promptText, images } = parseOpenAIMessageContent(last?.content);
 
   // 先生成图片，失败会抛异常返回 500
-  const imageUrls = await generateImages(model, promptText, { width, height, image }, refreshToken);
+  const imageUrls = await generateImages(model, promptText, { width, height, images }, refreshToken);
 
   const stream = new PassThrough();
 
