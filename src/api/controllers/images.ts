@@ -314,17 +314,11 @@ export async function generateImages(
         throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "轮询超时");
       }
     }
-    const urls = item_list
-      .map((item) => {
-        if (!item?.image?.large_images?.[0]?.image_url)
-          return item?.common_attr?.cover_url || null;
-        return item.image.large_images[0].image_url;
-      })
-      .filter(Boolean);
-    if (!urls.length) {
-      throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "无法生成图像: 即梦积分可能不足或生成结果为空");
-    }
-    return urls as string[];
+    return item_list.map((item) => {
+      if(!item?.image?.large_images?.[0]?.image_url)
+        return item?.common_attr?.cover_url || null;
+      return item.image.large_images[0].image_url;
+    });
   }
 
   const submitId = util.uuid();
@@ -587,17 +581,11 @@ export async function generateImages(
       throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "轮询超时");
     }
   }
-  const urls = item_list
-    .map((item) => {
-      if (!item?.image?.large_images?.[0]?.image_url)
-        return item?.common_attr?.cover_url || null;
-      return item.image.large_images[0].image_url;
-    })
-    .filter(Boolean);
-  if (!urls.length) {
-    throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "无法生成图像: 即梦积分可能不足或生成结果为空");
-  }
-  return urls as string[];
+  return item_list.map((item) => {
+    if(!item?.image?.large_images?.[0]?.image_url)
+      return item?.common_attr?.cover_url || null;
+    return item.image.large_images[0].image_url;
+  });
 }
 
 export default {

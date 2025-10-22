@@ -12,7 +12,6 @@ import FailureBody from './response/FailureBody.ts';
 import EX from './consts/exceptions.ts';
 import logger from './logger.ts';
 import config from './config.ts';
-import util from './util.ts';
 
 class Server {
 
@@ -29,29 +28,10 @@ class Server {
         this.app.use(async (ctx: any, next: Function) => {
             if(ctx.request.type === "application/xml" || ctx.request.type === "application/ssml+xml")
                 ctx.req.headers["content-type"] = "text/xml";
-            
-            // 添加请求上下文
-            const requestContext = {
-                requestId: ctx.requestId || util.uuid(),
-                userAgent: ctx.get('User-Agent'),
-                ip: ctx.ip,
-                url: ctx.url,
-                method: ctx.method
-            };
-            ctx.requestContext = requestContext;
-            
-            try { 
-                await next() 
-            }
+            try { await next() }
             catch (err) {
-                // 记录详细的异常信息
-                logger.error('Request failed:', {
-                    error: err,
-                    request: requestContext,
-                    stack: err?.stack
-                });
-                
-                const failureBody = new FailureBody(err, null, requestContext);
+                logger.error(err);
+                const failureBody = new FailureBody(err);
                 new Response(failureBody).injectTo(ctx);
             }
         });
@@ -114,13 +94,10 @@ class Server {
     #requestProcessing(ctx: any, routeFn: Function): Promise<any> {
         return new Promise(resolve => {
             const request = new Request(ctx);
-            const requestContext = ctx.requestContext || {};
-            
             try {
                 if(config.system.requestLog)
-                    logger.info(`-> ${request.method} ${request.url}`, { requestId: requestContext.requestId });
-                    
-                routeFn(request)
+                    logger.info(`-> ${request.method} ${request.url}`);
+                    routeFn(request)
                 .then(response => {
                     try {
                         if(!Response.isInstance(response)) {
@@ -132,58 +109,38 @@ class Server {
                         resolve({ request, response });
                     }
                     catch(err) {
-                        this.#handleRequestError(err, ctx, request, requestContext, resolve);
+                        logger.error(err);
+                        const failureBody = new FailureBody(err);
+                        const response = new Response(failureBody);
+                        response.injectTo(ctx);
+                        resolve({ request, response });
                     }
                 })
                 .catch(err => {
-                    this.#handleRequestError(err, ctx, request, requestContext, resolve);
+                    try {
+                        logger.error(err);
+                        const failureBody = new FailureBody(err);
+                        const response = new Response(failureBody);
+                        response.injectTo(ctx);
+                        resolve({ request, response });
+                    }
+                    catch(err) {
+                        logger.error(err);
+                        const failureBody = new FailureBody(err);
+                        const response = new Response(failureBody);
+                        response.injectTo(ctx);
+                        resolve({ request, response });
+                    }
                 });
             }
             catch(err) {
-                this.#handleRequestError(err, ctx, request, requestContext, resolve);
+                logger.error(err);
+                const failureBody = new FailureBody(err);
+                const response = new Response(failureBody);
+                response.injectTo(ctx);
+                resolve({ request, response });
             }
         });
-    }
-
-    /**
-     * 处理请求错误
-     */
-    #handleRequestError(
-        err: any, 
-        ctx: any, 
-        request: any, 
-        requestContext: any, 
-        resolve: Function
-    ): void {
-        try {
-            // 记录详细的错误信息
-            logger.error('Request processing failed:', {
-                error: err,
-                request: requestContext,
-                stack: err?.stack,
-                url: request?.url,
-                method: request?.method
-            });
-            
-            const failureBody = new FailureBody(err, null, requestContext);
-            const response = new Response(failureBody);
-            response.injectTo(ctx);
-            resolve({ request, response });
-        }
-        catch(handlerErr) {
-            // 如果错误处理器本身出错，记录并返回通用错误
-            logger.error('Error handler failed:', {
-                originalError: err,
-                handlerError: handlerErr,
-                request: requestContext
-            });
-            
-            const fallbackError = new Exception(EX.SYSTEM_ERROR, 'Internal server error', requestContext);
-            const failureBody = new FailureBody(fallbackError, null, requestContext);
-            const response = new Response(failureBody);
-            response.injectTo(ctx);
-            resolve({ request, response });
-        }
     }
 
     /**
