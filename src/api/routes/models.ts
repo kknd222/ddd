@@ -3,6 +3,23 @@ import Response from '@/lib/response/Response.ts';
 import Request from '@/lib/request/Request.ts';
 import { tokenSplit } from '@/api/controllers/core.ts';
 
+// 图像模型映射
+export const IMAGE_MODEL_MAP = {
+    "jimeng-4.0": "high_aes_general_v40",
+    "jimeng-3.1": "high_aes_general_v30l_art:general_v3.0_18b",
+    "jimeng-3.0": "high_aes_general_v30l:general_v3.0_18b",
+    "jimeng-2.1": "high_aes_general_v21_L:general_v2.1_L",
+    "jimeng-2.0-pro": "high_aes_general_v20_L:general_v2.0_L",
+    "jimeng-2.0": "high_aes_general_v20:general_v2.0",
+    "jimeng-1.4": "high_aes_v14_dreamina:general_v1.4",
+    "jimeng-xl-pro": "text2img_xl_sft",
+};
+
+// 视频模型映射
+export const VIDEO_MODEL_MAP = {
+    "jimeng-video-3.0": "dreamina_ic_generate_video_model_vgfm_3.0",
+};
+
 export default {
 
     prefix: '/v1',
@@ -59,6 +76,12 @@ export default {
                     model_req_key: 'high_aes_v14_dreamina:general_v1.4',
                 },
                 {
+                    id: 'jimeng-video-3.0',
+                    model_name: 'Video 3.0',
+                    model_tip: 'Generate videos from first frame image with motion.',
+                    model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0',
+                },
+                {
                     id: 'agent',
                     model_name: 'Agent',
                     model_tip: 'CapCut conversation SSE proxy (OpenAI-style stream).',
@@ -103,6 +126,12 @@ export default {
                     model_name: '图片 2.0',
                     model_tip: '文字遵循高，支持图片参考能力',
                     model_req_key: 'high_aes_general_v20:general_v2.0',
+                },
+                {
+                    id: 'jimeng-video-3.0',
+                    model_name: '视频 3.0',
+                    model_tip: '从首帧图片生成动态视频',
+                    model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0',
                 },
                 {
                     id: 'agent',

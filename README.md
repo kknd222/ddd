@@ -210,7 +210,7 @@ pm2 stop dreamina-free-api
 
 ## 接口列表
 
-目前支持与 openai 兼容的 `/v1/chat/completions` 接口，可自行使用与 openai 或其他兼容的客户端接入接口，或者使用 [dify](https://dify.ai/) 等线上服务接入使用。该接口已内置图像生成：发送文本（可选携带首个 `image_url`）后，返回内容为包含多张图片链接的 Markdown 文本。
+目前支持与 openai 兼容的 `/v1/chat/completions` 接口，可自行使用与 openai 或其他兼容的客户端接入接口，或者使用 [dify](https://dify.ai/) 等线上服务接入使用。该接口已内置图像生成和视频生成：发送文本（可选携带首个 `image_url`）后，返回内容为包含多张图片链接或视频链接的 Markdown 文本。
 
 **POST /v1/chat/completions**
 
@@ -220,7 +220,7 @@ header 需要设置 Authorization 头部：
 Authorization: Bearer [sessionid]
 ```
 
-请求数据：
+请求数据（图像生成）：
 
 ```json
 {
@@ -237,8 +237,28 @@ Authorization: Bearer [sessionid]
 }
 ```
 
-响应数据（`message.content` 为 Markdown 图片列表）：
+请求数据（视频生成）：
 
+```json
+{
+  // jimeng-video-3.0
+  "model": "jimeng-video-3.0",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {"type": "text", "text": "跑起来 -ar 16:9 -d 5"},
+        {"type": "image_url", "image_url": {"url": "https://example.com/first_frame.jpg"}}
+      ]
+    }
+  ],
+  "stream": false
+}
+```
+
+响应数据（`message.content` 为 Markdown 图片列表或视频 HTML）：
+
+**图像生成响应：**
 ```json
 {
   "id": "b400abe0-b4c3-11ef-b2eb-4175f5393bfd",
@@ -250,6 +270,31 @@ Authorization: Bearer [sessionid]
       "message": {
         "role": "assistant",
         "content": "![image_0](https://.../image0.jpeg)\n![image_1](https://.../image1.jpeg)\n![image_2](https://.../image2.jpeg)\n![image_3](https://.../image3.jpeg)\n"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 1,
+    "completion_tokens": 1,
+    "total_tokens": 2
+  },
+  "created": 1733593810
+}
+```
+
+**视频生成响应：**
+```json
+{
+  "id": "b400abe0-b4c3-11ef-b2eb-4175f5393bfd",
+  "model": "jimeng-video-3.0",
+  "object": "chat.completion",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "<video controls=\"controls\">\n    https://.../video.mp4\n</video>\n\n[Download Video](https://.../video.mp4)\n\n"
       },
       "finish_reason": "stop"
     }
@@ -287,6 +332,57 @@ Authorization: Bearer [sessionid]
   "sample_strength": 0.5,
   "image": "https://example.com/ref.jpg",
   "response_format": "url"
+}
+```
+
+### 视频生成
+
+视频生成接口，支持从首帧图片生成视频。
+
+**POST /v1/videos/generations**
+
+header 需要设置 Authorization 头部：
+
+```
+Authorization: Bearer [sessionid]
+```
+
+请求数据：
+
+```json
+{
+  "model": "jimeng-video-3.0",
+  "prompt": "跑起来 -ar 16:9 -d 5",
+  "first_frame_image": "https://example.com/first_frame.jpg",
+  "aspect_ratio": "16:9",
+  "duration": 5,
+  "fps": 24,
+  "response_format": "url"
+}
+```
+
+参数说明：
+- `model`: 视频模型，目前支持 `jimeng-video-3.0`
+- `prompt`: 提示词，支持内嵌参数：
+  - `-ar <ratio>`: 宽高比，支持 `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`
+  - `-d <seconds>`: 时长（秒），支持 `5` 或 `10`
+  - 示例：`"跑起来 -ar 16:9 -d 5"` 会自动解析参数
+- `first_frame_image`: 首帧图片 URL 或 Base64（必需）
+- `aspect_ratio`: 宽高比（可选，如果 prompt 中有 `-ar` 参数则优先使用 prompt 中的）
+- `duration`: 时长（秒），可选，默认 5
+- `fps`: 帧率，可选，默认 24
+- `response_format`: 响应格式，`url` 或 `b64_json`
+
+响应数据：
+
+```json
+{
+  "created": 1733593810,
+  "data": [
+    {
+      "url": "https://.../video.mp4"
+    }
+  ]
 }
 ```
 

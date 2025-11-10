@@ -5,6 +5,7 @@ import EX from "@/api/consts/exceptions.ts";
 import util from "@/lib/util.ts";
 import { getCredit, receiveCredit, request, ensureMsToken, generateCookie, uploadFile, getMsToken, getRegionConfig } from "./core.ts";
 import logger from "@/lib/logger.ts";
+import { IMAGE_MODEL_MAP } from "@/api/routes/models.ts";
 
 const DEFAULT_ASSISTANT_ID = "513641";
 const CN_ASSISTANT_ID = "513695";
@@ -17,27 +18,15 @@ const BLEND_MIN_VERSION = "3.2.5";
 const DA_VERSION = "3.2.8";
 // Web 版本（示例展示为 6.6.0）
 const WEB_VERSION = "6.6.0";
-const MODEL_MAP = {
-  // 与示例保持一致（去掉 _fangzhou 后缀）
-  "jimeng-4.0": "high_aes_general_v40",
-  "jimeng-3.1": "high_aes_general_v30l_art:general_v3.0_18b",
-  "jimeng-3.0": "high_aes_general_v30l:general_v3.0_18b",
-  "jimeng-2.1": "high_aes_general_v21_L:general_v2.1_L",
-  "jimeng-2.0-pro": "high_aes_general_v20_L:general_v2.0_L",
-  "jimeng-2.0": "high_aes_general_v20:general_v2.0",
-  // 对齐为 high_aes_v14_dreamina:general_v1.4
-  "jimeng-1.4": "high_aes_v14_dreamina:general_v1.4",
-  "jimeng-xl-pro": "text2img_xl_sft",
-};
 
 export function getModel(model: string) {
-  return MODEL_MAP[model] || MODEL_MAP[DEFAULT_MODEL];
+  return IMAGE_MODEL_MAP[model] || IMAGE_MODEL_MAP[DEFAULT_MODEL];
 }
 
 function getRegionAwareModel(model: string, isCN: boolean) {
   if (!isCN) return getModel(model);
   // CN 侧不支持 3.1 的 art 分支，回退到 3.0
-  if (model === "jimeng-3.1") return MODEL_MAP["jimeng-3.0"];
+  if (model === "jimeng-3.1") return IMAGE_MODEL_MAP["jimeng-3.0"];
   // CN 侧 1.4 使用 general_v14
   if (model === "jimeng-1.4") return "high_aes_general_v14:general_v1.4";
   return getModel(model);

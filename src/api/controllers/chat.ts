@@ -6,11 +6,19 @@ import EX from "@/api/consts/exceptions.ts";
 import logger from "@/lib/logger.ts";
 import util from "@/lib/util.ts";
 import { generateImages, DEFAULT_MODEL } from "./images.ts";
+import { generateVideo, DEFAULT_VIDEO_MODEL } from "./videos.ts";
 
 // 最大重试次数
 const MAX_RETRY_COUNT = 3;
 // 重试延迟
 const RETRY_DELAY = 5000;
+
+/**
+ * 判断是否为视频模型
+ */
+function isVideoModel(model: string): boolean {
+  return model.startsWith("jimeng-video-");
+}
 
 /**
  * 解析模型
@@ -20,20 +28,20 @@ const RETRY_DELAY = 5000;
  */
 function parseModel(model: string) {
   const [_model, size] = model.split(":");
-  
+
   if (!size) {
     // 4.0 模型默认使用 2k 尺寸
     const is4_0Model = _model.includes("4.0");
     // 3.x 模型默认使用 2k 尺寸
     const is3_xModel = _model.includes("3.");
-    
+
     let defaultDimension = 1024;
     if (is4_0Model) {
       defaultDimension = 4096;
     } else if (is3_xModel) {
       defaultDimension = 2048;
     }
-    
+
     return {
       model: _model,
       width: defaultDimension,
@@ -105,12 +113,53 @@ export async function createCompletion(
     if (messages.length === 0)
       throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "消息不能为空");
 
-    const { model, width, height } = parseModel(_model);
-    logger.info(messages);
-
     // 解析最后一条用户消息，支持 text + image_url
     const last = messages[messages.length - 1];
     const { text: promptText, images } = parseOpenAIMessageContent(last?.content);
+
+    // 判断是否为视频模型
+    if (isVideoModel(_model)) {
+      logger.info("检测到视频模型，使用视频生成");
+
+      // 视频生成需要首帧图片
+      if (!images || images.length === 0) {
+        throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "视频生成需要提供首帧图片");
+      }
+
+      const videoUrls = await generateVideo(
+        _model,
+        promptText,
+        {
+          firstFrameImage: images[0],
+        },
+        refreshToken
+      );
+
+      return {
+        id: util.uuid(),
+        model: _model,
+        object: "chat.completion",
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: "assistant",
+              content: videoUrls.reduce(
+                (acc, url, i) => acc + `<video controls="controls">\n    ${url}\n</video>\n\n[Download Video](${url})\n\n`,
+                ""
+              ),
+            },
+            finish_reason: "stop",
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        created: util.unixTimestamp(),
+      };
+    }
+
+    // 图像生成
+    const { model, width, height } = parseModel(_model);
+    logger.info(messages);
 
     const imageUrls = await generateImages(
       model,
@@ -170,16 +219,60 @@ export async function createCompletionStream(
   _model = DEFAULT_MODEL,
   retryCount = 0
 ) {
-  // 生成成功后再返回 SSE，失败走 500
-  const { model, width, height } = parseModel(_model);
-  logger.info(messages);
-
   if (messages.length === 0) {
     throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "消息不能为空");
   }
 
   const last = messages[messages.length - 1];
   const { text: promptText, images } = parseOpenAIMessageContent(last?.content);
+
+  // 判断是否为视频模型
+  if (isVideoModel(_model)) {
+    logger.info("检测到视频模型，使用视频生成（流式）");
+
+    // 视频生成需要首帧图片
+    if (!images || images.length === 0) {
+      throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "视频生成需要提供首帧图片");
+    }
+
+    // 先生成视频，失败会抛异常返回 500
+    const videoUrls = await generateVideo(
+      _model,
+      promptText,
+      {
+        firstFrameImage: images[0],
+      },
+      refreshToken
+    );
+
+    const stream = new PassThrough();
+
+    for (let i = 0; i < videoUrls.length; i++) {
+      const url = videoUrls[i];
+      stream.write(
+        "data: " +
+          JSON.stringify({
+            id: util.uuid(),
+            model: _model,
+            object: "chat.completion.chunk",
+            choices: [
+              {
+                index: i,
+                delta: { role: "assistant", content: `<video controls="controls">\n    ${url}\n</video>\n\n[Download Video](${url})\n\n` },
+                finish_reason: i < videoUrls.length - 1 ? null : "stop",
+              },
+            ],
+          }) +
+          "\n\n"
+      );
+    }
+    stream.end("data: [DONE]\n\n");
+    return stream;
+  }
+
+  // 图像生成（流式）
+  const { model, width, height } = parseModel(_model);
+  logger.info(messages);
 
   // 先生成图片，失败会抛异常返回 500
   const imageUrls = await generateImages(model, promptText, { width, height, images }, refreshToken);
