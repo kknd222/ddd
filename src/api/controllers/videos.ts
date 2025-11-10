@@ -28,7 +28,7 @@ export function getVideoModel(model: string) {
 
 /**
  * 解析提示词中的参数
- * 支持格式: "提示词 -ar 16:9 -d 5"
+ * 支持格式: "提示词 -ra 16:9 -d 5"
  * @param prompt 原始提示词
  * @returns 解析后的提示词和参数
  */
@@ -41,19 +41,19 @@ export function parsePromptParams(prompt: string): {
   let aspectRatio = "16:9"; // 默认宽高比
   let duration = 5; // 默认时长（秒）
 
-  // 解析 -ar 参数
-  const arMatch = prompt.match(/-ar\s+([\d:]+)/i);
-  if (arMatch) {
-    const ar = arMatch[1];
+  // 解析 -ra 参数（ratio，忽略大小写）
+  const raMatch = prompt.match(/-ra\s+([\d:]+)/i);
+  if (raMatch) {
+    const ar = raMatch[1];
     if (VALID_ASPECT_RATIOS.includes(ar)) {
       aspectRatio = ar;
     } else {
       logger.warn(`无效的宽高比参数: ${ar}, 使用默认值: ${aspectRatio}`);
     }
-    cleanPrompt = cleanPrompt.replace(/-ar\s+[\d:]+/gi, "");
+    cleanPrompt = cleanPrompt.replace(/-ra\s+[\d:]+/gi, "");
   }
 
-  // 解析 -d 参数
+  // 解析 -d 参数（duration，忽略大小写）
   const dMatch = prompt.match(/-d\s+(\d+)/i);
   if (dMatch) {
     const d = parseInt(dMatch[1]);

@@ -129,8 +129,14 @@ export async function generateImages(
     resolutionType = "2k";
     logger.info(`jimeng-nano-banana 模型使用固定分辨率: 1024x1024 (2k)`);
   }
-  // 如果提供了 ratio 和 resolution，使用它们来计算宽高（nano-banana 除外）
-  else if (finalRatio && finalResolution) {
+  // 如果只提供了 ratio 没有 resolution，使用默认的 2k 分辨率配合该 ratio
+  else if (finalRatio && !finalResolution) {
+    finalResolution = "2k"; // 默认使用 2k
+    logger.info(`只指定了 ratio: ${finalRatio}，使用默认分辨率: 2k`);
+  }
+
+  // 如果提供了 ratio 和 resolution（或使用默认 2k），使用它们来计算宽高
+  if (finalRatio && finalResolution && _model !== "jimeng-nano-banana") {
     // 简化的分辨率映射（基于 jimeng-api 的 RESOLUTION_OPTIONS）
     const resolutionMap: Record<string, Record<string, { width: number; height: number }>> = {
       "1k": {
@@ -190,13 +196,11 @@ export async function generateImages(
     finalWidth = finalWidth || 2048;
     finalHeight = finalHeight || 2048;
 
-    // 分辨率类型（与示例靠拢，可为空）
-    resolutionType = ((): string | undefined => {
-      if (finalWidth === 1024 && finalHeight === 1024) return "1k";
-      if (finalWidth === 2048 && finalHeight === 2048) return "2k";
-      if (finalWidth === 4096 && finalHeight === 4096) return "4k";
-      return undefined;
-    })();
+    // 如果是默认的 2048x2048，设置为 2k
+    if (finalWidth === 2048 && finalHeight === 2048) {
+      resolutionType = "2k";
+    }
+    // 否则 resolutionType 保持 undefined（自定义宽高）
   }
 
   // 每次生成图片前先请求 user_info 以获取新的 msToken

@@ -210,7 +210,9 @@ pm2 stop dreamina-free-api
 
 ## 接口列表
 
-目前支持与 openai 兼容的 `/v1/chat/completions` 接口，可自行使用与 openai 或其他兼容的客户端接入接口，或者使用 [dify](https://dify.ai/) 等线上服务接入使用。该接口已内置图像生成和视频生成：发送文本（可选携带首个 `image_url`）后，返回内容为包含多张图片链接或视频链接的 Markdown 文本。
+目前支持与 OpenAI 兼容的 `/v1/chat/completions` 接口，可自行使用与 OpenAI 或其他兼容的客户端接入接口，或者使用 [dify](https://dify.ai/) 等线上服务接入使用。
+
+### 对话接口（图像生成）
 
 **POST /v1/chat/completions**
 
@@ -220,56 +222,37 @@ header 需要设置 Authorization 头部：
 Authorization: Bearer [sessionid]
 ```
 
-请求数据（图像生成）：
+**完整请求示例（图像生成）：**
 
-```json
-{
-  // jimeng-3.0（默认） / jimeng-2.1 / jimeng-2.0-pro / jimeng-2.0 / jimeng-1.4 / jimeng-xl-pro
-  "model": "jimeng-3.0",
-  "messages": [
-    {
-      "role": "user",
-      "content": "少女祈祷中..."
-    }
-  ],
-  // 如果使用SSE流请设置为true，默认false
-  "stream": false
-}
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_SESSION_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jimeng-4.0",
+    "messages": [
+      {
+        "role": "user",
+        "content": "少女祈祷中... -re 4k -ra 16:9"
+      }
+    ],
+    "stream": false
+  }'
 ```
 
-请求数据（视频生成）：
+**完整响应示例：**
 
 ```json
 {
-  // jimeng-video-3.0
-  "model": "jimeng-video-3.0",
-  "messages": [
-    {
-      "role": "user",
-      "content": [
-        {"type": "text", "text": "跑起来 -ar 16:9 -d 5"},
-        {"type": "image_url", "image_url": {"url": "https://example.com/first_frame.jpg"}}
-      ]
-    }
-  ],
-  "stream": false
-}
-```
-
-响应数据（`message.content` 为 Markdown 图片列表或视频 HTML）：
-
-**图像生成响应：**
-```json
-{
-  "id": "b400abe0-b4c3-11ef-b2eb-4175f5393bfd",
-  "model": "jimeng-3.0",
+  "id": "chatcmpl-b400abe0-b4c3-11ef-b2eb-4175f5393bfd",
+  "model": "jimeng-4.0",
   "object": "chat.completion",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "![image_0](https://.../image0.jpeg)\n![image_1](https://.../image1.jpeg)\n![image_2](https://.../image2.jpeg)\n![image_3](https://.../image3.jpeg)\n"
+        "content": "![image_0](https://p9-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/61bceb3afeb54c1c80ffdd598ac2f72d~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=DUY6jlx4zAXRYJeATyjZ3O6F1Pw%3D&format=.jpeg)\n![image_1](https://p3-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/e37ab3cd95854cd7b37fb697ea2cb4da~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=oKtY400tjZeydKMyPZufjt0Qpjs%3D&format=.jpeg)\n![image_2](https://p9-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/13841ff1c30940cf931eccc22405656b~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=4UffSRMmOeYoC0u%2B5igl9S%2BfYKs%3D&format=.jpeg)\n![image_3](https://p6-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/731c350244b745d5990e8931b79b7fe7~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=ywYjZQeP3t2yyvx6Wlud%2BCB28nU%3D&format=.jpeg)\n"
       },
       "finish_reason": "stop"
     }
@@ -283,18 +266,50 @@ Authorization: Bearer [sessionid]
 }
 ```
 
-**视频生成响应：**
+**支持的图像模型：**
+- `jimeng-4.0`（默认，推荐）
+- `jimeng-3.1` / `jimeng-3.0` / `jimeng-2.1` / `jimeng-2.0-pro` / `jimeng-2.0` / `jimeng-1.4`
+- `jimeng-xl-pro`
+- `jimeng-nano-banana`（快速生成，固定 1024x1024）
+
+### 对话接口（视频生成）
+
+**POST /v1/chat/completions**
+
+**完整请求示例（视频生成）：**
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer YOUR_SESSION_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jimeng-video-3.0-pro",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "text", "text": "跑起来 -ra 16:9 -d 5"},
+          {"type": "image_url", "image_url": {"url": "https://example.com/first_frame.jpg"}}
+        ]
+      }
+    ],
+    "stream": false
+  }'
+```
+
+**完整响应示例：**
+
 ```json
 {
-  "id": "b400abe0-b4c3-11ef-b2eb-4175f5393bfd",
-  "model": "jimeng-video-3.0",
+  "id": "chatcmpl-c500def1-c5d4-22fg-c3fc-5286g6404cgf",
+  "model": "jimeng-video-3.0-pro",
   "object": "chat.completion",
   "choices": [
     {
       "index": 0,
       "message": {
         "role": "assistant",
-        "content": "<video controls=\"controls\">\n    https://.../video.mp4\n</video>\n\n[Download Video](https://.../video.mp4)\n\n"
+        "content": "<video controls=\"controls\" width=\"100%\">\n  <source src=\"https://v16-webapp-prime.us.tiktok.com/video/tos/useast2a/tos-useast2a-ve-0068c003/oQdABfIeNzEgCIBnQgmDEAIgfQnEeB/?a=1988&ch=0&cr=3&dr=0&lr=unwatermarked&cd=0%7C0%7C0%7C3&cv=1&br=1234&bt=617&bti=OTg3MzQzNDU&cs=0&ds=6&ft=iqa.yH-I_Myq8Zmo~R3wKMeuxKsd&mime_type=video_mp4&qs=0&rc=aGc4ZTw6Zzg8OjY4ZDw4OUBpM3RqbGc6ZnJ1cjMzZzczNEBeYzMuYC4yXy8xYC0xYTUvYSNqcWxvcjRnMGRgLS1kMS9zcw%3D%3D&l=20231207123456789012345678901234567890\" type=\"video/mp4\">\n</video>\n\n[Download Video](https://v16-webapp-prime.us.tiktok.com/video/tos/useast2a/tos-useast2a-ve-0068c003/oQdABfIeNzEgCIBnQgmDEAIgfQnEeB/?a=1988&ch=0&cr=3&dr=0&lr=unwatermarked&cd=0%7C0%7C0%7C3&cv=1&br=1234&bt=617&bti=OTg3MzQzNDU&cs=0&ds=6&ft=iqa.yH-I_Myq8Zmo~R3wKMeuxKsd&mime_type=video_mp4&qs=0&rc=aGc4ZTw6Zzg8OjY4ZDw4OUBpM3RqbGc6ZnJ1cjMzZzczNEBeYzMuYC4yXy8xYC0xYTUvYSNqcWxvcjRnMGRgLS1kMS9zcw%3D%3D&l=20231207123456789012345678901234567890)\n"
       },
       "finish_reason": "stop"
     }
@@ -307,6 +322,18 @@ Authorization: Bearer [sessionid]
   "created": 1733593810
 }
 ```
+
+**支持的视频模型：**
+- `jimeng-video-3.0`（默认）
+- `jimeng-video-3.0-pro`（专业版，质量更高）
+
+**提示词参数说明：**
+- 图像生成支持：
+  - `-re <resolution>`: 分辨率，支持 `1k`, `2k`（默认）, `4k`
+  - `-ra <ratio>`: 宽高比，支持 `1:1`, `4:3`, `3:4`, `16:9`, `9:16`, `3:2`, `2:3`, `21:9`
+- 视频生成支持：
+  - `-ra <ratio>`: 宽高比，支持 `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`
+  - `-d <seconds>`: 时长（秒），支持 `5`（默认）或 `10`
 
 ### 图像生成
 
@@ -320,24 +347,65 @@ header 需要设置 Authorization 头部：
 Authorization: Bearer [sessionid]
 ```
 
-请求数据（默认返回 URL，如需 Base64 请设置 `response_format: "b64_json"`）：
+**完整请求示例：**
+
+```bash
+curl -X POST http://localhost:8000/v1/images/generations \
+  -H "Authorization: Bearer YOUR_SESSION_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jimeng-4.0",
+    "prompt": "少女祈祷中... -re 4k -ra 16:9",
+    "negative_prompt": "",
+    "sample_strength": 0.5,
+    "response_format": "url"
+  }'
+```
+
+**完整响应示例：**
 
 ```json
 {
-  "model": "jimeng-3.0",
-  "prompt": "少女祈祷中...",
-  "negative_prompt": "",
-  "width": 1024,
-  "height": 1024,
-  "sample_strength": 0.5,
-  "image": "https://example.com/ref.jpg",
-  "response_format": "url"
+  "created": 1733593810,
+  "data": [
+    {
+      "url": "https://p9-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/61bceb3afeb54c1c80ffdd598ac2f72d~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=DUY6jlx4zAXRYJeATyjZ3O6F1Pw%3D&format=.jpeg"
+    },
+    {
+      "url": "https://p3-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/e37ab3cd95854cd7b37fb697ea2cb4da~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=oKtY400tjZeydKMyPZufjt0Qpjs%3D&format=.jpeg"
+    },
+    {
+      "url": "https://p9-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/13841ff1c30940cf931eccc22405656b~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=4UffSRMmOeYoC0u%2B5igl9S%2BfYKs%3D&format=.jpeg"
+    },
+    {
+      "url": "https://p6-heycan-hgt-sign.byteimg.com/tos-cn-i-3jr8j4ixpe/731c350244b745d5990e8931b79b7fe7~tplv-3jr8j4ixpe-aigc_resize:0:0.jpeg?lk3s=43402efa&x-expires=1735344000&x-signature=ywYjZQeP3t2yyvx6Wlud%2BCB28nU%3D&format=.jpeg"
+    }
+  ]
 }
 ```
 
+**参数说明：**
+
+- `model`: 图像模型，支持：
+  - `jimeng-4.0`（默认，推荐）
+  - `jimeng-3.1` / `jimeng-3.0` / `jimeng-2.1` / `jimeng-2.0-pro` / `jimeng-2.0` / `jimeng-1.4`
+  - `jimeng-xl-pro`
+  - `jimeng-nano-banana`（快速生成，固定 1024x1024）
+- `prompt`: 提示词，支持内嵌参数（忽略大小写）：
+  - `-re <resolution>`: 分辨率，支持 `1k`, `2k`（默认）, `4k`
+  - `-ra <ratio>`: 宽高比，支持 `1:1`, `4:3`, `3:4`, `16:9`, `9:16`, `3:2`, `2:3`, `21:9`
+  - 示例：`"少女祈祷中... -re 4k -ra 16:9"` 会自动解析参数
+- `negative_prompt`: 负向提示词（可选）
+- `resolution`: 分辨率（可选，如果 prompt 中有 `-re` 参数则优先使用 prompt 中的）
+- `ratio`: 宽高比（可选，如果 prompt 中有 `-ra` 参数则优先使用 prompt 中的）
+- `width` / `height`: 自定义宽高（可选，优先级低于 resolution + ratio）
+- `sample_strength`: 采样强度，范围 0-1，默认 0.5
+- `image`: 参考图片 URL 或 Base64（可选，仅 jimeng-3.0 和 jimeng-4.0 支持）
+- `response_format`: 响应格式，`url` 或 `b64_json`
+
 ### 视频生成
 
-视频生成接口，支持从首帧图片生成视频。
+视频生成接口，支持文生视频、图生视频、首尾帧视频三种模式。
 
 **POST /v1/videos/generations**
 
@@ -347,44 +415,55 @@ header 需要设置 Authorization 头部：
 Authorization: Bearer [sessionid]
 ```
 
-请求数据：
+**完整请求示例（首尾帧视频）：**
 
-```json
-{
-  "model": "jimeng-video-3.0",
-  "prompt": "跑起来 -ar 16:9 -d 5",
-  "first_frame_image": "https://example.com/first_frame.jpg",
-  "aspect_ratio": "16:9",
-  "duration": 5,
-  "fps": 24,
-  "response_format": "url"
-}
+```bash
+curl -X POST http://localhost:8000/v1/videos/generations \
+  -H "Authorization: Bearer YOUR_SESSION_ID" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "jimeng-video-3.0-pro",
+    "prompt": "跑起来 -ra 16:9 -d 5",
+    "images": [
+      "https://example.com/first_frame.jpg",
+      "https://example.com/end_frame.jpg"
+    ],
+    "response_format": "url"
+  }'
 ```
 
-参数说明：
-- `model`: 视频模型，目前支持 `jimeng-video-3.0`
-- `prompt`: 提示词，支持内嵌参数：
-  - `-ar <ratio>`: 宽高比，支持 `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`
-  - `-d <seconds>`: 时长（秒），支持 `5` 或 `10`
-  - 示例：`"跑起来 -ar 16:9 -d 5"` 会自动解析参数
-- `first_frame_image`: 首帧图片 URL 或 Base64（必需）
-- `aspect_ratio`: 宽高比（可选，如果 prompt 中有 `-ar` 参数则优先使用 prompt 中的）
-- `duration`: 时长（秒），可选，默认 5
-- `fps`: 帧率，可选，默认 24
-- `response_format`: 响应格式，`url` 或 `b64_json`
-
-响应数据：
+**完整响应示例：**
 
 ```json
 {
   "created": 1733593810,
   "data": [
     {
-      "url": "https://.../video.mp4"
+      "url": "https://v16-webapp-prime.us.tiktok.com/video/tos/useast2a/tos-useast2a-ve-0068c003/oQdABfIeNzEgCIBnQgmDEAIgfQnEeB/?a=1988&ch=0&cr=3&dr=0&lr=unwatermarked&cd=0%7C0%7C0%7C3&cv=1&br=1234&bt=617&bti=OTg3MzQzNDU&cs=0&ds=6&ft=iqa.yH-I_Myq8Zmo~R3wKMeuxKsd&mime_type=video_mp4&qs=0&rc=aGc4ZTw6Zzg8OjY4ZDw4OUBpM3RqbGc6ZnJ1cjMzZzczNEBeYzMuYC4yXy8xYC0xYTUvYSNqcWxvcjRnMGRgLS1kMS9zcw%3D%3D&l=20231207123456789012345678901234567890"
     }
   ]
 }
 ```
+
+**参数说明：**
+
+- `model`: 视频模型，支持：
+  - `jimeng-video-3.0`（默认）
+  - `jimeng-video-3.0-pro`（专业版，质量更高）
+- `prompt`: 提示词，支持内嵌参数（忽略大小写）：
+  - `-ra <ratio>`: 宽高比，支持 `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`
+  - `-d <seconds>`: 时长（秒），支持 `5`（默认）或 `10`
+  - 示例：`"跑起来 -ra 16:9 -d 5"` 会自动解析参数
+- `images`: 图片数组（可选），支持自动模式检测：
+  - 0 张图片：文生视频模式（纯文本生成）
+  - 1 张图片：图生视频模式（从首帧图片生成）
+  - 2 张图片：首尾帧视频模式（从首帧和尾帧生成中间过渡）
+- `first_frame_image`: 首帧图片 URL 或 Base64（可选，兼容旧参数）
+- `end_frame_image`: 尾帧图片 URL 或 Base64（可选，兼容旧参数）
+- `aspect_ratio`: 宽高比（可选，如果 prompt 中有 `-ra` 参数则优先使用 prompt 中的）
+- `duration`: 时长（秒），可选，默认 5
+- `fps`: 帧率，可选，默认 24
+- `response_format`: 响应格式，`url` 或 `b64_json`
 
 ### CapCut 会话代理（模型名：agent）
 
