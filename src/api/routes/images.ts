@@ -19,6 +19,8 @@ export default {
         .validate("body.negative_prompt", v => _.isUndefined(v) || _.isString(v))
         .validate("body.width", v => _.isUndefined(v) || _.isFinite(v))
         .validate("body.height", v => _.isUndefined(v) || _.isFinite(v))
+        .validate("body.ratio", v => _.isUndefined(v) || _.isString(v))
+        .validate("body.resolution", v => _.isUndefined(v) || _.isString(v))
         .validate("body.sample_strength", v => _.isUndefined(v) || _.isFinite(v))
         // 兼容 OpenAI 风格的 image 输入（字符串 / 对象 / 数组）
         .validate("body.image", v => _.isUndefined(v) || _.isString(v) || _.isObject(v) || _.isArray(v))
@@ -37,6 +39,8 @@ export default {
         negative_prompt: negativePrompt,
         width,
         height,
+        ratio,
+        resolution,
         sample_strength: sampleStrength,
         stream,
         response_format,
@@ -65,6 +69,8 @@ export default {
         const imageUrls = await generateImages(model, prompt, {
           width,
           height,
+          ratio,
+          resolution,
           sampleStrength,
           negativePrompt,
           image: imageInput,
@@ -100,6 +106,8 @@ export default {
       const imageUrls = await generateImages(model, prompt, {
         width,
         height,
+        ratio,
+        resolution,
         sampleStrength,
         negativePrompt,
         image: imageInput,

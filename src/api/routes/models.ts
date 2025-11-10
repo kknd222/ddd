@@ -13,10 +13,12 @@ export const IMAGE_MODEL_MAP = {
     "jimeng-2.0": "high_aes_general_v20:general_v2.0",
     "jimeng-1.4": "high_aes_v14_dreamina:general_v1.4",
     "jimeng-xl-pro": "text2img_xl_sft",
+    "jimeng-nano-banana": "external_model_gemini_flash_image_v25",
 };
 
 // 视频模型映射
 export const VIDEO_MODEL_MAP = {
+    "jimeng-video-3.0-pro": "dreamina_ic_generate_video_model_vgfm_3.0_pro",
     "jimeng-video-3.0": "dreamina_ic_generate_video_model_vgfm_3.0",
 };
 
@@ -76,6 +78,18 @@ export default {
                     model_req_key: 'high_aes_v14_dreamina:general_v1.4',
                 },
                 {
+                    id: 'jimeng-nano-banana',
+                    model_name: 'Nano Banana',
+                    model_tip: 'Fast and efficient image generation powered by Gemini Flash.',
+                    model_req_key: 'external_model_gemini_flash_image_v25',
+                },
+                {
+                    id: 'jimeng-video-3.0-pro',
+                    model_name: 'Video 3.0 Pro',
+                    model_tip: 'Professional video generation with enhanced quality and control.',
+                    model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0_pro',
+                },
+                {
                     id: 'jimeng-video-3.0',
                     model_name: 'Video 3.0',
                     model_tip: 'Generate videos from first frame image with motion.',
@@ -126,6 +140,18 @@ export default {
                     model_name: '图片 2.0',
                     model_tip: '文字遵循高，支持图片参考能力',
                     model_req_key: 'high_aes_general_v20:general_v2.0',
+                },
+                {
+                    id: 'jimeng-nano-banana',
+                    model_name: 'Nano Banana',
+                    model_tip: '快速高效的图片生成，由 Gemini Flash 驱动',
+                    model_req_key: 'external_model_gemini_flash_image_v25',
+                },
+                {
+                    id: 'jimeng-video-3.0-pro',
+                    model_name: '视频 3.0 Pro',
+                    model_tip: '专业级视频生成，增强质量和控制',
+                    model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0_pro',
                 },
                 {
                     id: 'jimeng-video-3.0',

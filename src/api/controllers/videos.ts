@@ -85,12 +85,14 @@ export async function generateVideo(
   prompt: string,
   {
     firstFrameImage,
+    endFrameImage,
     videoAspectRatio,
     fps = 24,
     duration,
     videoMode = 2,
   }: {
     firstFrameImage?: string; // URL or data URL (base64)
+    endFrameImage?: string; // URL or data URL (base64) for first_last_frames mode
     videoAspectRatio?: string; // 21:9, 16:9, 4:3, 1:1, 3:4, 9:16
     fps?: number; // 24
     duration?: number; // 5 or 10 seconds
@@ -126,14 +128,25 @@ export async function generateVideo(
   const isCN = (regionCfg?.countryCode || "").toUpperCase() === "CN";
   const model = getVideoModel(_model);
 
-  logger.info(
-    `使用视频模型: ${_model} 映射模型: ${model} 宽高比: ${finalAspectRatio} FPS: ${fps} 时长: ${finalDuration}s`
-  );
+  // 检测视频生成模式
+  const hasFirstFrame = !!firstFrameImage;
+  const hasEndFrame = !!endFrameImage;
+  let detectedMode: string;
 
-  // 检查是否需要首帧图片
-  if (!firstFrameImage) {
-    throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "视频生成需要提供首帧图片").setHTTPStatusCode(400);
+  if (!hasFirstFrame && !hasEndFrame) {
+    detectedMode = "文生视频";
+    logger.info("模式：文生视频（纯文本生成）");
+  } else if (hasFirstFrame && !hasEndFrame) {
+    detectedMode = "图生视频";
+    logger.info("模式：图生视频（单张首帧图片）");
+  } else if (hasFirstFrame && hasEndFrame) {
+    detectedMode = "首尾帧视频";
+    logger.info("模式：首尾帧视频（首帧+尾帧图片）");
   }
+
+  logger.info(
+    `使用视频模型: ${_model} 映射模型: ${model} 模式: ${detectedMode} 宽高比: ${finalAspectRatio} FPS: ${fps} 时长: ${finalDuration}s`
+  );
 
   const { totalCredit } = await getCredit(refreshToken);
   if (totalCredit <= 0) {
@@ -143,29 +156,89 @@ export async function generateVideo(
   const componentId = util.uuid();
   const country = (regionCfg?.countryCode || "US").toUpperCase();
 
-  // 上传首帧图片
-  let uploadedImage: { storeUri: string; width?: number; height?: number; mimeType?: string };
-  try {
-    uploadedImage = await uploadFile(firstFrameImage, refreshToken, false, country);
-    logger.info(`首帧图片已上传: ${uploadedImage.storeUri}, 尺寸: ${uploadedImage.width}x${uploadedImage.height}`);
-  } catch (e) {
-    throw new APIException(
-      EX.API_REQUEST_PARAMS_INVALID,
-      "首帧图片上传失败: " + (e?.message || e)
-    ).setHTTPStatusCode(400);
+  // 上传首帧图片（如果提供）
+  let uploadedFirstImage: { storeUri: string; width?: number; height?: number; mimeType?: string } | undefined;
+  if (firstFrameImage) {
+    try {
+      uploadedFirstImage = await uploadFile(firstFrameImage, refreshToken, false, country);
+      logger.info(`首帧图片已上传: ${uploadedFirstImage.storeUri}, 尺寸: ${uploadedFirstImage.width}x${uploadedFirstImage.height}`);
+    } catch (e) {
+      throw new APIException(
+        EX.API_REQUEST_PARAMS_INVALID,
+        "首帧图片上传失败: " + (e?.message || e)
+      ).setHTTPStatusCode(400);
+    }
+  }
+
+  // 上传尾帧图片（如果提供）
+  let uploadedEndImage: { storeUri: string; width?: number; height?: number; mimeType?: string } | undefined;
+  if (endFrameImage) {
+    try {
+      uploadedEndImage = await uploadFile(endFrameImage, refreshToken, false, country);
+      logger.info(`尾帧图片已上传: ${uploadedEndImage.storeUri}, 尺寸: ${uploadedEndImage.width}x${uploadedEndImage.height}`);
+    } catch (e) {
+      throw new APIException(
+        EX.API_REQUEST_PARAMS_INVALID,
+        "尾帧图片上传失败: " + (e?.message || e)
+      ).setHTTPStatusCode(400);
+    }
   }
 
   const submitId = util.uuid();
   const seed = Math.floor(Math.random() * 100000000) + 1000000000;
 
-  // 确定图片格式
-  const imageFormat = (() => {
-    const mt = uploadedImage.mimeType || "";
+  // 确定图片格式的辅助函数
+  const getImageFormat = (mimeType?: string) => {
+    const mt = mimeType || "";
     if (/png/i.test(mt)) return "png";
     if (/jpeg|jpg/i.test(mt)) return "jpeg";
     if (/webp/i.test(mt)) return "webp";
     return "png";
-  })();
+  };
+
+  // 构建视频生成输入
+  const videoGenInput: any = {
+    type: "",
+    id: util.uuid(),
+    min_version: DRAFT_VERSION,
+    prompt: cleanPrompt,
+    video_mode: videoMode,
+    fps: fps,
+    duration_ms: durationMs,
+    idip_meta_list: [],
+  };
+
+  // 添加首帧图片（如果有）
+  if (uploadedFirstImage) {
+    videoGenInput.first_frame_image = {
+      type: "image",
+      id: util.uuid(),
+      source_from: "upload",
+      platform_type: 1,
+      name: "",
+      image_uri: uploadedFirstImage.storeUri,
+      width: uploadedFirstImage.width || 1024,
+      height: uploadedFirstImage.height || 1536,
+      format: getImageFormat(uploadedFirstImage.mimeType),
+      uri: uploadedFirstImage.storeUri,
+    };
+  }
+
+  // 添加尾帧图片（如果有）
+  if (uploadedEndImage) {
+    videoGenInput.end_frame_image = {
+      type: "image",
+      id: util.uuid(),
+      source_from: "upload",
+      platform_type: 1,
+      name: "",
+      image_uri: uploadedEndImage.storeUri,
+      width: uploadedEndImage.width || 1024,
+      height: uploadedEndImage.height || 1536,
+      format: getImageFormat(uploadedEndImage.mimeType),
+      uri: uploadedEndImage.storeUri,
+    };
+  }
 
   // 构建视频生成组件
   const component = {
@@ -191,30 +264,7 @@ export async function generateVideo(
         text_to_video_params: {
           type: "",
           id: util.uuid(),
-          video_gen_inputs: [
-            {
-              type: "",
-              id: util.uuid(),
-              min_version: DRAFT_VERSION,
-              prompt: cleanPrompt,
-              first_frame_image: {
-                type: "image",
-                id: util.uuid(),
-                source_from: "upload",
-                platform_type: 1,
-                name: "",
-                image_uri: uploadedImage.storeUri,
-                width: uploadedImage.width || 1024,
-                height: uploadedImage.height || 1536,
-                format: imageFormat,
-                uri: uploadedImage.storeUri,
-              },
-              video_mode: videoMode,
-              fps: fps,
-              duration_ms: durationMs,
-              idip_meta_list: [],
-            },
-          ],
+          video_gen_inputs: [videoGenInput],
           video_aspect_ratio: finalAspectRatio,
           seed: seed,
           model_req_key: model,
