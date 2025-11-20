@@ -45,18 +45,31 @@ export async function createCapcutConversationStream(
       return stream;
     }
 
-    const last = messages[messages.length - 1];
-    const { text } = parseOpenAIMessageContent(last?.content);
     const conversation_id = params?.conversation_id || util.uuid();
 
     // 预拉取 msToken 与区域域名信息
     await ensureMsToken(refreshToken);
 
-    const body = {
-      conversation_id,
-      messages: [
-        {
-          author: { role: "user" },
+    // 处理系统提示词和多轮对话
+    const capcutMessages: any[] = [];
+    let systemPrompt = "";
+    
+    for (const msg of messages) {
+      const role = msg?.role?.toLowerCase();
+      const { text } = parseOpenAIMessageContent(msg?.content);
+      
+      if (!text) continue;
+      
+      // 收集系统提示词
+      if (role === "system") {
+        systemPrompt = systemPrompt ? `${systemPrompt}\n${text}` : text;
+        continue;
+      }
+      
+      // 转换为 CapCut 消息格式
+      if (role === "user" || role === "assistant") {
+        capcutMessages.push({
+          author: { role: role === "assistant" ? "assistant" : "user" },
           id: util.uuid(),
           content: { content_parts: [{ text }] },
           metadata: {
@@ -66,8 +79,55 @@ export async function createCapcutConversationStream(
           },
           create_time: util.unixTimestamp() * 1000,
           tools: [],
+        });
+      }
+    }
+
+    // 如果有系统提示词，将其融入第一条用户消息
+    if (systemPrompt && capcutMessages.length > 0) {
+      // 找到第一条用户消息
+      const firstUserMsgIndex = capcutMessages.findIndex(m => m.author.role === "user");
+      if (firstUserMsgIndex !== -1) {
+        const firstUserMsg = capcutMessages[firstUserMsgIndex];
+        const originalText = firstUserMsg.content.content_parts[0]?.text || "";
+        // 将系统提示词作为前缀添加到第一条用户消息中
+        firstUserMsg.content.content_parts[0].text = `${systemPrompt}\n\n${originalText}`;
+      } else {
+        // 如果没有用户消息，创建一个包含系统提示词的用户消息
+        capcutMessages.unshift({
+          author: { role: "user" },
+          id: util.uuid(),
+          content: { content_parts: [{ text: systemPrompt }] },
+          metadata: {
+            is_visually_hidden_from_conversation: false,
+            conversation_id,
+            parent_message_id: "",
+          },
+          create_time: util.unixTimestamp() * 1000,
+          tools: [],
+        });
+      }
+    }
+
+    // 确保至少有一条消息
+    if (capcutMessages.length === 0) {
+      capcutMessages.push({
+        author: { role: "user" },
+        id: util.uuid(),
+        content: { content_parts: [{ text: "Hello" }] },
+        metadata: {
+          is_visually_hidden_from_conversation: false,
+          conversation_id,
+          parent_message_id: "",
         },
-      ],
+        create_time: util.unixTimestamp() * 1000,
+        tools: [],
+      });
+    }
+
+    const body = {
+      conversation_id,
+      messages: capcutMessages,
       version: "3.0.0",
     };
 

@@ -265,7 +265,7 @@ export async function generateImages(
         width: cnWidth,
         ...(cnResolutionType ? { resolution_type: cnResolutionType } : {}),
       },
-      intelligent_ratio: false,
+      intelligent_ratio: hasImages,
     };
 
     const imgFormatsCN = uploadedImagesCN.map(img => {
@@ -502,6 +502,7 @@ export async function generateImages(
       width: adjWidth,
       ...(resolutionType ? { resolution_type: resolutionType } : {}),
     },
+    intelligent_ratio: hasImagesIntl,
   } as any;
 
   const componentForGenerate = {
