@@ -12,6 +12,20 @@ import { createParser } from "eventsource-parser";
 import logger from "@/lib/logger.ts";
 import util from "@/lib/util.ts";
 
+// 配置axios代理
+if (process.env.PROXY) {
+  const proxyUrl = new URL(process.env.PROXY);
+  axios.defaults.proxy = {
+    host: proxyUrl.hostname,
+    port: parseInt(proxyUrl.port),
+    auth: proxyUrl.username ? {
+      username: proxyUrl.username,
+      password: proxyUrl.password
+    } : undefined,
+    protocol: proxyUrl.protocol
+  };
+}
+
 // 模型名称
 const MODEL_NAME = "jimeng";
 // 默认的AgentID（海外）
@@ -170,7 +184,7 @@ export async function ensureMsToken(refreshToken: string) {
 
   const cookieStr = `sessionid=${refreshToken}; sessionid_ss=${refreshToken}`;
 
-  // 从 Accept-Language 推导 Lan（尽量不硬编码）
+  // 从 Accept-Language 推导 Lan
   const acceptLang = "zh-CN,zh;q=0.9";
   const lan = acceptLang.split(",")[0]?.split("-")[0] || "en";
 
@@ -304,7 +318,7 @@ export async function getCredit(refreshToken: string) {
  * @param refreshToken 用于刷新access_token的refresh_token
  */
 export async function receiveCredit(refreshToken: string) {
-  logger.info("正在收取今日积分...")
+  logger.info("正在收取今日积分...");
   const cfg = getRegionConfig(refreshToken);
   const commerceHost = cfg?.commerceDomain || "https://commerce-api-sg.capcut.com";
   try {
@@ -313,12 +327,17 @@ export async function receiveCredit(refreshToken: string) {
         time_zone: "Asia/Shanghai"
       },
     });
-    console.log("data", data)
+
+    const { is_first_receive, receive_quota, has_popup } = data;
+    const firstReceiveText = is_first_receive ? "今日首次领取" : "今日已领取过";
+
+    logger.info(`✅ 积分领取成功: 获得 ${receive_quota} 积分 (${firstReceiveText})`);
+
+    return data;
   } catch (error) {
-    console.log("error", error)
+    logger.error(`❌ 积分领取失败: ${error.message || error}`);
+    throw error;
   }
-  // logger.info(`\n今日${receive_quota}积分收取成功\n剩余积分: ${cur_total_credits}`);
-  // return 0;
 }
 
 /**
@@ -397,6 +416,7 @@ export async function request(
     params: paramsObj,
     headers: {
       ...FAKE_HEADERS,
+      Did: String(DEVICE_ID),
       Cookie: generateCookie(token, regionParam || getRegionConfig(refreshToken)?.countryCode),
       "Device-Time": deviceTime,
       // US 域名也接受 Sign，这里统一附带
