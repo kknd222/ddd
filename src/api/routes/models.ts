@@ -14,6 +14,7 @@ export const IMAGE_MODEL_MAP = {
     "jimeng-1.4": "high_aes_v14_dreamina:general_v1.4",
     "jimeng-xl-pro": "text2img_xl_sft",
     "jimeng-nano-banana": "external_model_gemini_flash_image_v25",
+    "jimeng-nano-banana-pro": "dreamina_image_lib_1",
 };
 
 // 视频模型映射
@@ -84,6 +85,12 @@ export default {
                     model_req_key: 'external_model_gemini_flash_image_v25',
                 },
                 {
+                    id: 'jimeng-nano-banana-pro',
+                    model_name: 'Nano Banana Pro',
+                    model_tip: 'Enhanced image generation with advanced image library features.',
+                    model_req_key: 'dreamina_image_lib_1',
+                },
+                {
                     id: 'jimeng-video-3.0-pro',
                     model_name: 'Video 3.0 Pro',
                     model_tip: 'Professional video generation with enhanced quality and control.',
@@ -146,6 +153,12 @@ export default {
                     model_name: 'Nano Banana',
                     model_tip: '快速高效的图片生成，由 Gemini Flash 驱动',
                     model_req_key: 'external_model_gemini_flash_image_v25',
+                },
+                {
+                    id: 'jimeng-nano-banana-pro',
+                    model_name: 'Nano Banana Pro',
+                    model_tip: '增强型图片生成，支持高级图片库功能',
+                    model_req_key: 'dreamina_image_lib_1',
                 },
                 {
                     id: 'jimeng-video-3.0-pro',

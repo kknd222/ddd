@@ -6,6 +6,7 @@ import util from "@/lib/util.ts";
 import { getCredit, receiveCredit, request, ensureMsToken, uploadFile, getMsToken, getRegionConfig } from "./core.ts";
 import logger from "@/lib/logger.ts";
 import { VIDEO_MODEL_MAP } from "@/api/routes/models.ts";
+import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 
 const DEFAULT_ASSISTANT_ID = "513641";
 const CN_ASSISTANT_ID = "513695";
@@ -359,17 +360,17 @@ export async function generateVideo(
     throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
   }
 
-  let status = 20;
-  let failCode;
-  let item_list: any[] = [];
-  let guardCount = 0;
+  // 🚀 使用智能轮询器（视频生成）
+  logger.info(`开始智能轮询视频生成状态, historyId: ${historyId}, submitId: ${submitId}`);
 
-  // 轮询视频生成状态（视频生成统一使用 submit_ids 查询）
-  logger.info(`开始轮询视频生成状态, historyId: ${historyId}, submitId: ${submitId}`);
+  const poller = new SmartPoller({
+    maxPollCount: 900, // 视频生成时间较长，最多轮询900次（30分钟）
+    pollInterval: 2000, // 视频生成较慢，使用2秒基础间隔
+    expectedItemCount: 1,
+    type: 'video'
+  });
 
-  while (true) {
-    await new Promise((resolve) => setTimeout(resolve, 2000)); // 视频生成较慢，使用2秒间隔
-
+  const { result: pollingResult, data: finalTaskInfo } = await poller.poll(async () => {
     const result = await request(
       "post",
       `${apiHost}/mweb/v1/get_history_by_ids`,
@@ -391,38 +392,25 @@ export async function generateVideo(
     }
 
     const entry = result[submitId];
-    const pollInfo = entry?.queue_info?.polling_config;
-    status = entry.status ?? entry.task?.status ?? status;
-    failCode = entry.fail_code ?? entry.task?.fail_code;
-    item_list = entry.item_list ?? entry.task?.item_list ?? [];
+    const currentStatus = entry.status ?? entry.task?.status ?? 20;
+    const currentFailCode = entry.fail_code ?? entry.task?.fail_code;
+    const currentItemList = entry.item_list ?? entry.task?.item_list ?? [];
 
-    logger.info(
-      `视频生成轮询 [${guardCount + 1}]: status=${status}, itemCount=${item_list.length}, ` +
-      `totalCount=${entry.total_image_count ?? 1}, finishedCount=${entry.finished_image_count ?? 0}`
-    );
+    return {
+      status: {
+        status: currentStatus,
+        failCode: currentFailCode,
+        itemCount: currentItemList.length,
+        finishTime: 0,
+        historyId: submitId
+      } as PollingStatus,
+      data: entry
+    };
+  }, submitId);
 
-    // 状态含义：50完成、30失败、20/45处理中
-    if (status === 50 && item_list.length > 0) {
-      logger.info("视频生成完成");
-      break;
-    }
-
-    if (status === 30) {
-      if (failCode === "2038") throw new APIException(EX.API_CONTENT_FILTERED);
-      throw new APIException(EX.API_IMAGE_GENERATION_FAILED, `视频生成失败, failCode: ${failCode}`);
-    }
-
-    // 动态调整轮询间隔
-    const nextInterval = Number(pollInfo?.interval_seconds);
-    if (nextInterval && nextInterval > 1 && nextInterval < 120) {
-      await new Promise((resolve) => setTimeout(resolve, nextInterval * 1000));
-    }
-
-    if (++guardCount > 300) {
-      // 视频生成时间较长，最多轮询300次（约10分钟）
-      throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "轮询超时");
-    }
-  }
+  const item_list = finalTaskInfo.item_list ?? finalTaskInfo.task?.item_list ?? [];
+  
+  logger.info(`✅ 视频生成完成: 耗时 ${pollingResult.elapsedTime}s, 生成 ${item_list.length} 个视频`);
 
   // 提取视频URL
   return item_list.map((item) => {

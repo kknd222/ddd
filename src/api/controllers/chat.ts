@@ -206,7 +206,7 @@ export async function createCompletion(
 }
 
 /**
- * 流式对话补全
+ * 流式对话补全（真正的流式响应 - 立即返回流，异步生成）
  *
  * @param messages 参考gpt系列消息格式，多轮对话请完整提供上下文
  * @param refreshToken 用于刷新access_token的refresh_token
@@ -228,76 +228,205 @@ export async function createCompletionStream(
 
   // 判断是否为视频模型
   if (isVideoModel(_model)) {
-    logger.info("检测到视频模型，使用视频生成（流式）");
+    logger.info("检测到视频模型，使用视频生成（真流式）");
 
     // 视频生成需要首帧图片
     if (!images || images.length === 0) {
       throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "视频生成需要提供首帧图片");
     }
 
-    // 先生成视频，失败会抛异常返回 500
-    const videoUrls = await generateVideo(
+    // 🚀 立即创建流并返回
+    const stream = new PassThrough();
+
+    // 立即推送初始消息
+    stream.write(
+      "data: " +
+        JSON.stringify({
+          id: util.uuid(),
+          model: _model,
+          object: "chat.completion.chunk",
+          choices: [
+            {
+              index: 0,
+              delta: { role: "assistant", content: "🎬 视频生成中，请稍候...\n这可能需要1-5分钟，请耐心等待" },
+              finish_reason: null,
+            },
+          ],
+        }) +
+        "\n\n"
+    );
+
+    // 🔄 异步执行视频生成
+    generateVideo(
       _model,
       promptText,
       {
         firstFrameImage: images[0],
       },
       refreshToken
-    );
+    )
+      .then((videoUrls) => {
+        // 检查流是否仍然可写
+        if (!stream.destroyed && stream.writable) {
+          for (let i = 0; i < videoUrls.length; i++) {
+            const url = videoUrls[i];
+            stream.write(
+              "data: " +
+                JSON.stringify({
+                  id: util.uuid(),
+                  model: _model,
+                  object: "chat.completion.chunk",
+                  choices: [
+                    {
+                      index: i + 1,
+                      delta: {
+                        role: "assistant",
+                        content: `\n\n✅ 视频生成完成！\n\n<video controls="controls">\n    ${url}\n</video>\n\n[Download Video](${url})\n\n`,
+                      },
+                      finish_reason: i < videoUrls.length - 1 ? null : "stop",
+                    },
+                  ],
+                }) +
+                "\n\n"
+            );
+          }
+          stream.end("data: [DONE]\n\n");
+        } else {
+          logger.debug("视频生成完成，但流已关闭");
+        }
+      })
+      .catch((err) => {
+        logger.error(`视频生成失败: ${err.message}`);
+        // 检查流是否仍然可写
+        if (!stream.destroyed && stream.writable) {
+          stream.write(
+            "data: " +
+              JSON.stringify({
+                id: util.uuid(),
+                model: _model,
+                object: "chat.completion.chunk",
+                choices: [
+                  {
+                    index: 1,
+                    delta: {
+                      role: "assistant",
+                      content: `\n\n❌ 视频生成失败: ${err.message}\n\n请检查参数或稍后重试。`,
+                    },
+                    finish_reason: "stop",
+                  },
+                ],
+              }) +
+              "\n\n"
+          );
+          stream.end("data: [DONE]\n\n");
+        }
+      });
 
-    const stream = new PassThrough();
-
-    for (let i = 0; i < videoUrls.length; i++) {
-      const url = videoUrls[i];
-      stream.write(
-        "data: " +
-          JSON.stringify({
-            id: util.uuid(),
-            model: _model,
-            object: "chat.completion.chunk",
-            choices: [
-              {
-                index: i,
-                delta: { role: "assistant", content: `<video controls="controls">\n    ${url}\n</video>\n\n[Download Video](${url})\n\n` },
-                finish_reason: i < videoUrls.length - 1 ? null : "stop",
-              },
-            ],
-          }) +
-          "\n\n"
-      );
-    }
-    stream.end("data: [DONE]\n\n");
     return stream;
   }
 
-  // 图像生成（流式）
+  // 🎨 图像生成（真流式）
   const { model, width, height } = parseModel(_model);
-  logger.info(messages);
+  logger.info(`🎨 开始图像生成 (真流式): model=${model}, size=${width}x${height}`);
 
-  // 先生成图片，失败会抛异常返回 500
-  const imageUrls = await generateImages(model, promptText, { width, height, images }, refreshToken);
-
+  // 🚀 立即创建流并返回
   const stream = new PassThrough();
 
-  for (let i = 0; i < imageUrls.length; i++) {
-    const url = imageUrls[i];
-    stream.write(
-      "data: " +
-        JSON.stringify({
-          id: util.uuid(),
-          model: _model || model,
-          object: "chat.completion.chunk",
-          choices: [
-            {
-              index: i,
-              delta: { role: "assistant", content: `![image_${i}](${url})\n` },
-              finish_reason: i < imageUrls.length - 1 ? null : "stop",
-            },
-          ],
-        }) +
-        "\n\n"
-    );
-  }
-  stream.end("data: [DONE]\n\n");
+  // 立即推送初始消息
+  stream.write(
+    "data: " +
+      JSON.stringify({
+        id: util.uuid(),
+        model: _model || model,
+        object: "chat.completion.chunk",
+        choices: [
+          {
+            index: 0,
+            delta: { role: "assistant", content: "🎨 图像生成中，请稍候..." },
+            finish_reason: null,
+          },
+        ],
+      }) +
+      "\n\n"
+  );
+
+  // 🔄 异步执行图像生成
+  generateImages(model, promptText, { width, height, images }, refreshToken)
+    .then((imageUrls) => {
+      // 检查流是否仍然可写
+      if (!stream.destroyed && stream.writable) {
+        // 推送完成提示
+        stream.write(
+          "data: " +
+            JSON.stringify({
+              id: util.uuid(),
+              model: _model || model,
+              object: "chat.completion.chunk",
+              choices: [
+                {
+                  index: 0,
+                  delta: { role: "assistant", content: "\n\n✨ 图像生成完成！\n\n" },
+                  finish_reason: null,
+                },
+              ],
+            }) +
+            "\n\n"
+        );
+
+        // 推送所有图片
+        for (let i = 0; i < imageUrls.length; i++) {
+          const url = imageUrls[i];
+          stream.write(
+            "data: " +
+              JSON.stringify({
+                id: util.uuid(),
+                model: _model || model,
+                object: "chat.completion.chunk",
+                choices: [
+                  {
+                    index: i + 1,
+                    delta: {
+                      role: "assistant",
+                      content: `![image_${i}](${url})\n`,
+                    },
+                    finish_reason: i < imageUrls.length - 1 ? null : "stop",
+                  },
+                ],
+              }) +
+              "\n\n"
+          );
+        }
+        stream.end("data: [DONE]\n\n");
+      } else {
+        logger.debug("图像生成完成，但流已关闭");
+      }
+    })
+    .catch((err) => {
+      logger.error(`图像生成失败: ${err.message}`);
+      // 检查流是否仍然可写
+      if (!stream.destroyed && stream.writable) {
+        stream.write(
+          "data: " +
+            JSON.stringify({
+              id: util.uuid(),
+              model: _model || model,
+              object: "chat.completion.chunk",
+              choices: [
+                {
+                  index: 1,
+                  delta: {
+                    role: "assistant",
+                    content: `\n\n❌ 图像生成失败: ${err.message}\n\n请检查参数或稍后重试。`,
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            }) +
+            "\n\n"
+        );
+        stream.end("data: [DONE]\n\n");
+      }
+    });
+
   return stream;
 }

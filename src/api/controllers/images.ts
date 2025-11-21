@@ -6,6 +6,7 @@ import util from "@/lib/util.ts";
 import { getCredit, receiveCredit, request, ensureMsToken, generateCookie, uploadFile, getMsToken, getRegionConfig } from "./core.ts";
 import logger from "@/lib/logger.ts";
 import { IMAGE_MODEL_MAP } from "@/api/routes/models.ts";
+import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 
 const DEFAULT_ASSISTANT_ID = "513641";
 const CN_ASSISTANT_ID = "513695";
@@ -134,8 +135,13 @@ export async function generateImages(
     finalResolution = "2k"; // 默认使用 2k
     logger.info(`只指定了 ratio: ${finalRatio}，使用默认分辨率: 2k`);
   }
+  // 如果只提供了 resolution 没有 ratio，使用默认的 1:1 比例
+  else if (finalResolution && !finalRatio) {
+    finalRatio = "1:1"; // 默认使用 1:1 比例
+    logger.info(`只指定了分辨率: ${finalResolution}，使用默认比例: 1:1`);
+  }
 
-  // 如果提供了 ratio 和 resolution（或使用默认 2k），使用它们来计算宽高
+  // 如果提供了 ratio 和 resolution（或使用默认值），使用它们来计算宽高
   if (finalRatio && finalResolution && _model !== "jimeng-nano-banana") {
     // 简化的分辨率映射（基于 jimeng-api 的 RESOLUTION_OPTIONS）
     const resolutionMap: Record<string, Record<string, { width: number; height: number }>> = {
@@ -405,11 +411,15 @@ export async function generateImages(
     if (!historyId)
       throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
 
-    let status = 20, failCode, item_list: any[] = [];
-    let guardCount = 0;
-    while (true) {
-      // 自适应轮询间隔（CN 返回里可能包含建议的间隔配置）
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+    // 🚀 使用智能轮询器（CN区域）
+    const poller = new SmartPoller({
+      maxPollCount: 600,
+      pollInterval: 1000,
+      expectedItemCount: 4,
+      type: 'image'
+    });
+
+    const { result: pollingResult, data: finalTaskInfo } = await poller.poll(async () => {
       const result = await request("post", `/mweb/v1/get_history_by_ids`, refreshToken, {
         params: {
           region: "cn",
@@ -422,37 +432,36 @@ export async function generateImages(
           submit_ids: [submitIdCN],
         },
       });
+      
       const entry = result?.[submitIdCN] || {};
       const pollInfo = entry?.queue_info?.polling_config;
-      logger.info("[CN] history poll:", JSON.stringify({
-        keys: Object.keys(result || {}),
-        entryStatus: entry?.status ?? entry?.task?.status,
-        itemCount: (entry?.item_list || entry?.task?.item_list || []).length,
-        interval: pollInfo?.interval_seconds,
-      }));
-      if (!entry || Object.keys(entry).length === 0)
+      
+      if (!entry || Object.keys(entry).length === 0) {
         throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录不存在");
-      status = entry.status ?? entry.task?.status ?? status;
-      failCode = entry.fail_code ?? entry.task?.fail_code;
-      item_list = entry.item_list ?? entry.task?.item_list ?? [];
+      }
+      
+      const currentStatus = entry.status ?? entry.task?.status ?? 20;
+      const currentFailCode = entry.fail_code ?? entry.task?.fail_code;
+      const currentItemList = entry.item_list ?? entry.task?.item_list ?? [];
       const totalCount = entry.total_image_count ?? 1;
       const finishedCount = entry.finished_image_count ?? 0;
-      // 状态含义：50完成、30失败、45处理中；根据实际图片数量判断是否完成
-      // 当 status=50 或 (status=45 且所有图片已生成) 时认为完成
-      if (status === 50 || (item_list.length > 0 && finishedCount >= totalCount)) break;
-      if (status === 30) {
-        if (failCode === '2038') throw new APIException(EX.API_CONTENT_FILTERED);
-        throw new APIException(EX.API_IMAGE_GENERATION_FAILED);
-      }
-      // 动态调整下一次轮询间隔
-      const nextInterval = Number(pollInfo?.interval_seconds);
-      if (nextInterval && nextInterval > 1 && nextInterval < 120) {
-        await new Promise((resolve) => setTimeout(resolve, nextInterval * 1000));
-      }
-      if (++guardCount > 120) {
-        throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "轮询超时");
-      }
-    }
+      
+      return {
+        status: {
+          status: currentStatus,
+          failCode: currentFailCode,
+          itemCount: currentItemList.length,
+          finishTime: 0,
+          historyId: submitIdCN
+        } as PollingStatus,
+        data: entry
+      };
+    }, submitIdCN);
+
+    const item_list = finalTaskInfo.item_list ?? finalTaskInfo.task?.item_list ?? [];
+    
+    logger.info(`✅ [CN] 图像生成完成: 耗时 ${pollingResult.elapsedTime}s, 生成 ${item_list.length} 张图片`);
+    
     return item_list.map((item) => {
       if(!item?.image?.large_images?.[0]?.image_url)
         return item?.common_attr?.cover_url || null;
@@ -656,13 +665,18 @@ export async function generateImages(
   if (!historyId)
     throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
 
-  let status = 20, failCode, item_list = [];
-  // 选择历史查询主机与查询键（US 使用 submit_id，其他使用 history_id）
+  // 🚀 使用智能轮询器（国际区域）
   const historyApiHost = regionCfg?.mwebHost || "https://mweb-api-sg.capcut.com";
   const pollKey = country === "US" ? submitId : historyId;
-  let guardCount = 0;
-  while (true) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  const poller = new SmartPoller({
+    maxPollCount: 600,
+    pollInterval: 1000,
+    expectedItemCount: 4,
+    type: 'image'
+  });
+
+  const { result: pollingResult, data: finalTaskInfo } = await poller.poll(async () => {
     const result = await request("post", `${historyApiHost}/mweb/v1/get_history_by_ids`, refreshToken, {
       params: {
         region: country,
@@ -694,36 +708,32 @@ export async function generateImages(
         http_common_info: { aid: Number(DEFAULT_ASSISTANT_ID) },
       },
     });
-    if (!result[pollKey])
+
+    if (!result[pollKey]) {
       throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录不存在");
+    }
+
     const entry = result[pollKey];
-    const pollInfo = entry?.queue_info?.polling_config;
-    logger.info(`[国际区] history poll: status=${entry.status}, itemCount=${(entry.item_list || []).length}, totalCount=${entry.total_image_count ?? 1}, finishedCount=${entry.finished_image_count ?? 0}`);
+    const currentStatus = entry.status;
+    const currentFailCode = entry.fail_code;
+    const currentItemList = entry.item_list || [];
 
-    status = entry.status;
-    failCode = entry.fail_code;
-    item_list = entry.item_list || [];
-    const totalCount = entry.total_image_count ?? 1;
-    const finishedCount = entry.finished_image_count ?? 0;
+    return {
+      status: {
+        status: currentStatus,
+        failCode: currentFailCode,
+        itemCount: currentItemList.length,
+        finishTime: 0,
+        historyId: pollKey
+      } as PollingStatus,
+      data: entry
+    };
+  }, pollKey);
 
-    // 状态含义：50完成、30失败、45/20等处理中；根据实际图片数量判断是否完成
-    // 当 status=50 或 (所有图片已生成) 时认为完成
-    if (status === 50 || (item_list.length > 0 && finishedCount >= totalCount)) break;
-    if (status === 30) {
-      if (failCode === '2038') throw new APIException(EX.API_CONTENT_FILTERED);
-      throw new APIException(EX.API_IMAGE_GENERATION_FAILED);
-    }
-
-    // 动态调整下一次轮询间隔
-    const nextInterval = Number(pollInfo?.interval_seconds);
-    if (nextInterval && nextInterval > 1 && nextInterval < 120) {
-      await new Promise((resolve) => setTimeout(resolve, nextInterval * 1000));
-    }
-
-    if (++guardCount > 120) {
-      throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "轮询超时");
-    }
-  }
+  const item_list = finalTaskInfo.item_list || [];
+  
+  logger.info(`✅ [国际区] 图像生成完成: 耗时 ${pollingResult.elapsedTime}s, 生成 ${item_list.length} 张图片`);
+  
   return item_list.map((item) => {
     if(!item?.image?.large_images?.[0]?.image_url)
       return item?.common_attr?.cover_url || null;
