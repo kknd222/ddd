@@ -44,6 +44,33 @@ const DEVICE_ID = Math.random() * 999999999999999999 + 7000000000000000000;
 const WEB_ID = Math.random() * 999999999999999999 + 7000000000000000000;
 // 用户ID
 const USER_ID = util.uuid(false);
+
+/**
+ * 生成 sid_guard cookie 值
+ * 格式: {token}%7C{timestamp}%7C{expiry}%7C{date}
+ */
+function generateSidGuard(token: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const expiry = 5184000; // 60天
+  const expiryDate = new Date((now + expiry) * 1000);
+
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  const dayName = days[expiryDate.getUTCDay()];
+  const day = String(expiryDate.getUTCDate()).padStart(2, '0');
+  const month = months[expiryDate.getUTCMonth()];
+  const year = expiryDate.getUTCFullYear();
+  const hours = String(expiryDate.getUTCHours()).padStart(2, '0');
+  const minutes = String(expiryDate.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(expiryDate.getUTCSeconds()).padStart(2, '0');
+
+  const dateStr = `${dayName},+${day}-${month}-${year}+${hours}:${minutes}:${seconds}+GMT`;
+
+  // URL encode: | -> %7C
+  return `${token}%7C${now}%7C${expiry}%7C${dateStr}`;
+}
+
 // msToken（由 user_info 接口下发的校验 Cookie）
 const MS_TOKEN_MAP = new Map<string, string>();
 export function getMsToken(refreshToken: string) { return MS_TOKEN_MAP.get(refreshToken) || null; }
@@ -120,36 +147,41 @@ export async function acquireToken(refreshToken: string): Promise<string> {
 
 /**
  * 生成cookie
+ * 海外区域使用优化的 cookie 组合: cc-target-idc + sid_guard + sessionid
+ * CN 区域使用 jimeng-free-api 的 cookie 格式
  */
 export function generateCookie(refreshToken: string, region?: string) {
   const { token: baseToken } = parseTokenRegion(refreshToken);
   const regionUpper = (region || "").toUpperCase();
   const cfg = getRegionConfig(refreshToken);
-  const msToken = getMsToken(refreshToken);
+
+  // CN 区域：使用 jimeng-free-api 的 cookie 格式
+  if (regionUpper === "CN") {
+    const cookieParts = [
+      `_tea_web_id=${WEB_ID}`,
+      `is_staff_user=false`,
+      `sid_guard=${generateSidGuard(baseToken)}`,
+      `uid_tt=${USER_ID}`,
+      `uid_tt_ss=${USER_ID}`,
+      `sid_tt=${baseToken}`,
+      `sessionid=${baseToken}`,
+      `sessionid_ss=${baseToken}`,
+      `store-region=cn-gd`,
+      `store-region-src=uid`,
+    ];
+    return cookieParts.join("; ");
+  }
+
+  // 海外区域：使用优化的 cookie 组合
+  // cc-target-idc + sid_guard 是必需的，sessionid 用于任务跟踪
+  const idc = cfg?.webIdc || (regionUpper === "US" ? "useast5" : "alisg");
   const cookieParts = [
-    `_tea_web_id=${WEB_ID}`,
-    `is_staff_user=false`,
-    `sid_guard=${baseToken}%7C${util.unixTimestamp()}%7C5184000%7CMon%2C+03-Feb-2025+08%3A17%3A09+GMT`,
-    `uid_tt=${USER_ID}`,
-    `uid_tt_ss=${USER_ID}`,
-    `sid_tt=${baseToken}`,
+    `cc-target-idc=${idc}`,
+    `sid_guard=${generateSidGuard(baseToken)}`,
     `sessionid=${baseToken}`,
     `sessionid_ss=${baseToken}`,
   ];
-  // CN 按 jimeng-free-api：使用 store-region
-  if (regionUpper === "CN") {
-    cookieParts.push(`store-region=cn-gd`);
-    cookieParts.push(`store-region-src=uid`);
-  } else {
-    const countryCode = regionUpper ? regionUpper.toLowerCase() : "us";
-    const idc = cfg?.webIdc || (regionUpper === "US" ? "useast5" : "alisg");
-    cookieParts.push(`store-idc=${idc}`);
-    cookieParts.push(`store-country-code=${countryCode}`);
-    cookieParts.push(`store-country-code-src=uid`);
-    // US 目标机房标记（可选）：仅附带 cc-target-idc，tt-target-idc-sign 不再自动获取
-    if (regionUpper === "US") cookieParts.push(`cc-target-idc=useast5`);
-  }
-  if (msToken && regionUpper !== "CN") cookieParts.push(`msToken=${msToken}`);
+
   return cookieParts.join("; ");
 }
 
@@ -182,11 +214,9 @@ export async function ensureMsToken(refreshToken: string) {
   const deviceTime = util.unixTimestamp();
   const sign = util.md5(`9e2c|${uri.slice(-7)}|${PLATFORM_CODE}|${VERSION_CODE}|${deviceTime}||11ac`);
 
-  const cookieStr = `sessionid=${refreshToken}; sessionid_ss=${refreshToken}`;
-
-  // 从 Accept-Language 推导 Lan
-  const acceptLang = "zh-CN,zh;q=0.9";
-  const lan = acceptLang.split(",")[0]?.split("-")[0] || "en";
+  // 使用最小 cookie 组合: cc-target-idc + sid_guard
+  const { token: baseToken } = parseTokenRegion(refreshToken);
+  const cookieStr = `cc-target-idc=useast5; sid_guard=${generateSidGuard(baseToken)}`;
 
   const headers = {
     ...FAKE_HEADERS,

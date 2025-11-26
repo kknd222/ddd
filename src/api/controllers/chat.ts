@@ -126,12 +126,26 @@ export async function createCompletion(
         throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "视频生成需要提供首帧图片");
       }
 
+      // 支持首尾帧模式：如果提供了两张图片，第二张作为结束帧
+      const videoParams: any = {
+        firstFrameImage: images[0],
+      };
+      
+      if (images.length >= 2) {
+        videoParams.endFrameImage = images[1];
+        logger.info(`检测到 ${images.length} 张图片，使用首尾帧模式`);
+      } else {
+        logger.info("仅提供了1张图片，使用首帧模式");
+      }
+      
+      if (images.length > 2) {
+        logger.warn(`提供了 ${images.length} 张图片，但视频生成最多支持2张（首帧+尾帧），其余图片将被忽略`);
+      }
+
       const videoUrls = await generateVideo(
         _model,
         promptText,
-        {
-          firstFrameImage: images[0],
-        },
+        videoParams,
         refreshToken
       );
 

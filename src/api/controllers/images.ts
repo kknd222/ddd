@@ -15,10 +15,10 @@ export const DEFAULT_MODEL = "jimeng-3.1";
 const DRAFT_VERSION = "3.0.2";
 // 混合/参考图最小版本（根据抓包对齐）
 const BLEND_MIN_VERSION = "3.2.5";
-// 数据层版本（示例展示为 3.2.8）
-const DA_VERSION = "3.2.8";
-// Web 版本（示例展示为 6.6.0）
-const WEB_VERSION = "6.6.0";
+// 数据层版本（对齐官方 3.3.4）
+const DA_VERSION = "3.3.4";
+// Web 版本（对齐官方 7.5.0）
+const WEB_VERSION = "7.5.0";
 
 export function getModel(model: string) {
   return IMAGE_MODEL_MAP[model] || IMAGE_MODEL_MAP[DEFAULT_MODEL];
@@ -35,7 +35,10 @@ function getRegionAwareModel(model: string, isCN: boolean) {
 
 /**
  * 解析提示词中的参数
- * 支持格式: "提示词 -re 4k -ra 16:9"
+ * 支持多种格式:
+ * - "-re 4k -ra 16:9" (原有格式)
+ * - "4k" 或 "2k" 或 "1k" (直接写分辨率)
+ * - "比例 16:9" 或 "比例16:9" 或 "比例 16：9" (中文比例)
  * @param prompt 原始提示词
  * @returns 解析后的提示词和参数
  */
@@ -48,11 +51,16 @@ export function parseImagePromptParams(prompt: string): {
   let resolution: string | undefined;
   let ratio: string | undefined;
 
-  // 解析 -re 参数（resolution，忽略大小写）
+  // Dreamina 实际支持的比例列表
+  const validRatios = [
+    "1:1", "4:3", "3:4", "16:9", "9:16",
+    "3:2", "2:3", "21:9"
+  ];
+
+  // 1. 解析 -re 参数（resolution，忽略大小写）
   const reMatch = prompt.match(/-re\s+(\w+)/i);
   if (reMatch) {
     const res = reMatch[1].toLowerCase();
-    // 验证是否为有效的分辨率值
     if (["1k", "2k", "4k"].includes(res)) {
       resolution = res;
     } else {
@@ -61,18 +69,46 @@ export function parseImagePromptParams(prompt: string): {
     cleanPrompt = cleanPrompt.replace(/-re\s+\w+/gi, "");
   }
 
-  // 解析 -ra 参数（ratio，忽略大小写）
-  const raMatch = prompt.match(/-ra\s+([\d:]+)/i);
+  // 2. 解析直接写的分辨率 (1k, 2k, 4k，忽略大小写)
+  if (!resolution) {
+    const sizeRegex = /\b([124])k\b/gi;
+    const sizeMatch = prompt.match(sizeRegex);
+    if (sizeMatch) {
+      resolution = sizeMatch[sizeMatch.length - 1].toLowerCase(); // 取最后一个匹配
+      cleanPrompt = cleanPrompt.replace(sizeRegex, "");
+    }
+  }
+
+  // 3. 解析 -ra 参数（ratio，忽略大小写，支持中英文冒号）
+  const raMatch = prompt.match(/-ra\s+([\d]+[:\：][\d]+)/i);
   if (raMatch) {
-    const r = raMatch[1];
-    // 验证是否为有效的比例值
-    const validRatios = ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9"];
+    let r = raMatch[1].replace("：", ":"); // 中文冒号转英文
     if (validRatios.includes(r)) {
       ratio = r;
     } else {
-      logger.warn(`无效的比例参数: ${r}, 将被忽略`);
+      logger.warn(`无效的比例参数: ${r}, 将被忽略。可用比例: ${validRatios.join(", ")}`);
     }
-    cleanPrompt = cleanPrompt.replace(/-ra\s+[\d:]+/gi, "");
+    cleanPrompt = cleanPrompt.replace(/-ra\s+[\d]+[:\：][\d]+/gi, "");
+  }
+
+  // 4. 解析中文 "比例 16:9" 或 "比例16:9" 格式（支持中英文冒号）
+  if (!ratio) {
+    const ratioRegex = /比例\s*([\d]+[:\：][\d]+)/g;
+    const ratioMatch = prompt.match(ratioRegex);
+    if (ratioMatch) {
+      // 提取数字比例部分
+      const lastMatch = ratioMatch[ratioMatch.length - 1];
+      const numMatch = lastMatch.match(/([\d]+[:\：][\d]+)/);
+      if (numMatch) {
+        let ratioValue = numMatch[1].replace("：", ":"); // 中文冒号转英文
+        if (validRatios.includes(ratioValue)) {
+          ratio = ratioValue;
+        } else {
+          logger.warn(`不支持的比例 "${ratioValue}"，可用比例: ${validRatios.join(", ")}`);
+        }
+      }
+      cleanPrompt = cleanPrompt.replace(ratioRegex, "");
+    }
   }
 
   // 清理多余空格
@@ -120,18 +156,12 @@ export async function generateImages(
   let finalWidth = width;
   let finalHeight = height;
   let resolutionType: string | undefined;
+  let imageRatioEnum: number = 1; // image_ratio 枚举值，默认 1:1
   let finalResolution = resolution || parsed.resolution;
   let finalRatio = ratio || parsed.ratio;
 
-  // jimeng-nano-banana 模型固定使用 1024x1024 和 2k，忽略所有外部参数
-  if (_model === "jimeng-nano-banana") {
-    finalWidth = 1024;
-    finalHeight = 1024;
-    resolutionType = "2k";
-    logger.info(`jimeng-nano-banana 模型使用固定分辨率: 1024x1024 (2k)`);
-  }
   // 如果只提供了 ratio 没有 resolution，使用默认的 2k 分辨率配合该 ratio
-  else if (finalRatio && !finalResolution) {
+  if (finalRatio && !finalResolution) {
     finalResolution = "2k"; // 默认使用 2k
     logger.info(`只指定了 ratio: ${finalRatio}，使用默认分辨率: 2k`);
   }
@@ -142,38 +172,38 @@ export async function generateImages(
   }
 
   // 如果提供了 ratio 和 resolution（或使用默认值），使用它们来计算宽高
-  if (finalRatio && finalResolution && _model !== "jimeng-nano-banana") {
-    // 简化的分辨率映射（基于 jimeng-api 的 RESOLUTION_OPTIONS）
-    const resolutionMap: Record<string, Record<string, { width: number; height: number }>> = {
+  if (finalRatio && finalResolution) {
+    // 分辨率映射（基于 jimeng-api 的 RESOLUTION_OPTIONS，包含 image_ratio 枚举值）
+    const resolutionMap: Record<string, Record<string, { width: number; height: number; ratio: number }>> = {
       "1k": {
-        "1:1": { width: 1328, height: 1328 },
-        "4:3": { width: 1472, height: 1104 },
-        "3:4": { width: 1104, height: 1472 },
-        "16:9": { width: 1664, height: 936 },
-        "9:16": { width: 936, height: 1664 },
-        "3:2": { width: 1584, height: 1056 },
-        "2:3": { width: 1056, height: 1584 },
-        "21:9": { width: 2016, height: 864 },
+        "1:1": { width: 1328, height: 1328, ratio: 1 },
+        "4:3": { width: 1472, height: 1104, ratio: 4 },
+        "3:4": { width: 1104, height: 1472, ratio: 2 },
+        "16:9": { width: 1664, height: 936, ratio: 3 },
+        "9:16": { width: 936, height: 1664, ratio: 5 },
+        "3:2": { width: 1584, height: 1056, ratio: 7 },
+        "2:3": { width: 1056, height: 1584, ratio: 6 },
+        "21:9": { width: 2016, height: 864, ratio: 8 },
       },
       "2k": {
-        "1:1": { width: 2048, height: 2048 },
-        "4:3": { width: 2304, height: 1728 },
-        "3:4": { width: 1728, height: 2304 },
-        "16:9": { width: 2560, height: 1440 },
-        "9:16": { width: 1440, height: 2560 },
-        "3:2": { width: 2496, height: 1664 },
-        "2:3": { width: 1664, height: 2496 },
-        "21:9": { width: 3024, height: 1296 },
+        "1:1": { width: 2048, height: 2048, ratio: 1 },
+        "4:3": { width: 2304, height: 1728, ratio: 4 },
+        "3:4": { width: 1728, height: 2304, ratio: 2 },
+        "16:9": { width: 2560, height: 1440, ratio: 3 },
+        "9:16": { width: 1440, height: 2560, ratio: 5 },
+        "3:2": { width: 2496, height: 1664, ratio: 7 },
+        "2:3": { width: 1664, height: 2496, ratio: 6 },
+        "21:9": { width: 3024, height: 1296, ratio: 8 },
       },
       "4k": {
-        "1:1": { width: 4096, height: 4096 },
-        "4:3": { width: 4608, height: 3456 },
-        "3:4": { width: 3456, height: 4608 },
-        "16:9": { width: 5120, height: 2880 },
-        "9:16": { width: 2880, height: 5120 },
-        "3:2": { width: 4992, height: 3328 },
-        "2:3": { width: 3328, height: 4992 },
-        "21:9": { width: 6048, height: 2592 },
+        "1:1": { width: 4096, height: 4096, ratio: 1 },
+        "4:3": { width: 4608, height: 3456, ratio: 4 },
+        "3:4": { width: 3456, height: 4608, ratio: 2 },
+        "16:9": { width: 5120, height: 2880, ratio: 3 },
+        "9:16": { width: 2880, height: 5120, ratio: 5 },
+        "3:2": { width: 4992, height: 3328, ratio: 7 },
+        "2:3": { width: 3328, height: 4992, ratio: 6 },
+        "21:9": { width: 6048, height: 2592, ratio: 8 },
       },
     };
 
@@ -197,6 +227,7 @@ export async function generateImages(
     finalWidth = ratioConfig.width;
     finalHeight = ratioConfig.height;
     resolutionType = finalResolution;
+    imageRatioEnum = ratioConfig.ratio;
   } else {
     // 使用默认值或传入的宽高 - 默认使用 2k 分辨率
     finalWidth = finalWidth || 2048;
@@ -214,8 +245,7 @@ export async function generateImages(
   const regionCfg = getRegionConfig(refreshToken);
   const isCN = (regionCfg?.countryCode || "").toUpperCase() === "CN";
   const model = getRegionAwareModel(_model, isCN);
-  logger.info(`使用模型: ${_model} 映射模型: ${model} ${finalWidth}x${finalHeight} 分辨率: ${resolutionType} 精细度: ${sampleStrength}`);
-  logger.info('-------------> modified_1 <----------')
+  logger.info(`使用模型: ${_model} 映射模型: ${model} ${finalWidth}x${finalHeight} 分辨率: ${resolutionType} 比例枚举: ${imageRatioEnum} 精细度: ${sampleStrength}`);
 
   // 图片输入支持：国际区仅 jimeng-3.0；CN 区支持 jimeng-3.0 与 jimeng-4.0
   const allowImage = _model === "jimeng-3.0" || _model === "jimeng-4.0";
@@ -263,7 +293,7 @@ export async function generateImages(
       ...(hasImages ? {} : { negative_prompt: negativePrompt }),
       seed: Math.floor(Math.random() * 100000000) + 2500000000,
       sample_strength: sampleStrength,
-      image_ratio: 1,
+      image_ratio: imageRatioEnum,
       large_image_info: {
         type: "",
         id: util.uuid(),
@@ -503,7 +533,7 @@ export async function generateImages(
     ...(hasImagesIntl ? {} : { negative_prompt: negativePrompt }),
     seed: Math.floor(Math.random() * 100000000) + 2500000000,
     sample_strength: sampleStrength,
-    image_ratio: 1,
+    image_ratio: imageRatioEnum,
     large_image_info: {
       type: "",
       id: util.uuid(),
@@ -535,6 +565,11 @@ export async function generateImages(
         type: "",
         id: util.uuid(),
         core_param: baseCoreParam,
+      },
+      gen_option: {
+        type: "",
+        id: util.uuid(),
+        generate_all: false,
       },
     },
   };
@@ -608,7 +643,6 @@ export async function generateImages(
 
   // 根据地区切换域名（US 使用 dreamina-api.us.capcut.com，需要 msToken 作为 query）
   const apiHost = regionCfg?.mwebHost || "https://mweb-api-sg.capcut.com";
-  const webComponentOpenFlag = hasImagesIntl ? 1 : 0;
   const { aigc_data } = await request(
     "post",
     `${apiHost}/mweb/v1/aigc_draft/generate`,
@@ -617,7 +651,7 @@ export async function generateImages(
       params: {
         region: country,
         da_version: DA_VERSION,
-        web_component_open_flag: webComponentOpenFlag,
+        web_component_open_flag: 1,
         web_version: WEB_VERSION,
         aigc_features: "app_lip_sync",
         ...(country === "US" && getMsToken(refreshToken) ? { msToken: getMsToken(refreshToken)! } : {}),
@@ -641,6 +675,19 @@ export async function generateImages(
                 promptSource: "custom",
                 generateCount: 1,
                 enterFrom: "click",
+                sceneOptions: JSON.stringify([{
+                  type: "image",
+                  scene: "ImageBasicGenerate",
+                  modelReqKey: model,
+                  resolutionType: resolutionType || "2k",
+                  abilityList: [],
+                  reportParams: {
+                    enterSource: "generate",
+                    vipSource: "generate",
+                    extraVipFunctionKey: `${model}-${resolutionType || "2k"}`,
+                    useVipFunctionDetailsReporterHoc: true
+                  }
+                }]),
                 generateId,
                 isRegenerate: false,
               }
@@ -661,6 +708,10 @@ export async function generateImages(
       },
     }
   );
+
+  // 调试日志：打印核心参数
+  logger.info(`[DEBUG] 请求参数: model=${model}, width=${adjWidth}, height=${adjHeight}, image_ratio=${imageRatioEnum}, resolution_type=${resolutionType}`);
+
   const historyId = aigc_data.history_record_id;
   if (!historyId)
     throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
