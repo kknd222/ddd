@@ -22,7 +22,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/dreamina-free-api
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/dddd
           tags: |
             # 为 git 分支事件启用 ref 类型的标签 (e.g. "main")
             type=ref,event=branch
