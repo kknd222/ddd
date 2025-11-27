@@ -20,7 +20,12 @@ export const IMAGE_MODEL_MAP = {
 // 视频模型映射
 export const VIDEO_MODEL_MAP = {
     "jimeng-video-3.0-pro": "dreamina_ic_generate_video_model_vgfm_3.0_pro",
+    "jimeng-video-3.0-fast": "dreamina_ic_generate_video_model_vgfm_3.0_fast",
     "jimeng-video-3.0": "dreamina_ic_generate_video_model_vgfm_3.0",
+    "jimeng-video-s2.0-pro": "dreamina_ic_generate_video_model_vgfm1.0",
+    "jimeng-video-sora2": "dreamina_sora2_generate_video",
+    "jimeng-video-veo3.1": "dreamina_veo31_generate_video",
+    "jimeng-video-veo3": "dreamina_veo3_generate_video",
 };
 
 export default {
@@ -93,14 +98,44 @@ export default {
                 {
                     id: 'jimeng-video-3.0-pro',
                     model_name: 'Video 3.0 Pro',
-                    model_tip: 'Professional video generation with enhanced quality and control.',
+                    model_tip: 'Best-in-class performance, ultra-clear visuals.',
                     model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0_pro',
+                },
+                {
+                    id: 'jimeng-video-3.0-fast',
+                    model_name: 'Video 3.0 Fast',
+                    model_tip: 'Film-level performance, faster and more credit-efficient.',
+                    model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0_fast',
                 },
                 {
                     id: 'jimeng-video-3.0',
                     model_name: 'Video 3.0',
-                    model_tip: 'Generate videos from first frame image with motion.',
+                    model_tip: 'Creates multiple scenes with one detailed prompt.',
                     model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0',
+                },
+                {
+                    id: 'jimeng-video-s2.0-pro',
+                    model_name: 'Video S2.0 Pro',
+                    model_tip: 'Realistic motion and natural camera movement.',
+                    model_req_key: 'dreamina_ic_generate_video_model_vgfm1.0',
+                },
+                {
+                    id: 'jimeng-video-sora2',
+                    model_name: 'Sora 2',
+                    model_tip: 'OpenAI\'s latest model. (face-generation is not supported)',
+                    model_req_key: 'dreamina_sora2_generate_video',
+                },
+                {
+                    id: 'jimeng-video-veo3.1',
+                    model_name: 'Veo 3.1',
+                    model_tip: 'Google\'s latest video generation model, now with native audio.',
+                    model_req_key: 'dreamina_veo31_generate_video',
+                },
+                {
+                    id: 'jimeng-video-veo3',
+                    model_name: 'Veo 3',
+                    model_tip: 'Google\'s video generation model, now with native audio.',
+                    model_req_key: 'dreamina_veo3_generate_video',
                 },
                 {
                     id: 'agent',
@@ -163,14 +198,44 @@ export default {
                 {
                     id: 'jimeng-video-3.0-pro',
                     model_name: '视频 3.0 Pro',
-                    model_tip: '专业级视频生成，增强质量和控制',
+                    model_tip: '顶级性能，超清视觉效果',
                     model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0_pro',
+                },
+                {
+                    id: 'jimeng-video-3.0-fast',
+                    model_name: '视频 3.0 Fast',
+                    model_tip: '电影级性能，更快更省积分',
+                    model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0_fast',
                 },
                 {
                     id: 'jimeng-video-3.0',
                     model_name: '视频 3.0',
-                    model_tip: '从首帧图片生成动态视频',
+                    model_tip: '用详细提示词创建多场景视频',
                     model_req_key: 'dreamina_ic_generate_video_model_vgfm_3.0',
+                },
+                {
+                    id: 'jimeng-video-s2.0-pro',
+                    model_name: '视频 S2.0 Pro',
+                    model_tip: '真实动作和自然镜头运动',
+                    model_req_key: 'dreamina_ic_generate_video_model_vgfm1.0',
+                },
+                {
+                    id: 'jimeng-video-sora2',
+                    model_name: 'Sora 2',
+                    model_tip: 'OpenAI 最新模型（不支持人脸生成）',
+                    model_req_key: 'dreamina_sora2_generate_video',
+                },
+                {
+                    id: 'jimeng-video-veo3.1',
+                    model_name: 'Veo 3.1',
+                    model_tip: 'Google 最新视频生成模型，原生支持音频',
+                    model_req_key: 'dreamina_veo31_generate_video',
+                },
+                {
+                    id: 'jimeng-video-veo3',
+                    model_name: 'Veo 3',
+                    model_tip: 'Google 视频生成模型，原生支持音频',
+                    model_req_key: 'dreamina_veo3_generate_video',
                 },
                 {
                     id: 'agent',

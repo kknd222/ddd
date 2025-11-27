@@ -3,7 +3,7 @@ import _ from "lodash";
 import APIException from "@/lib/exceptions/APIException.ts";
 import EX from "@/api/consts/exceptions.ts";
 import util from "@/lib/util.ts";
-import { getCredit, receiveCredit, request, ensureMsToken, generateCookie, uploadFile, getMsToken, getRegionConfig } from "./core.ts";
+import { getCredit, receiveCredit, request, ensureMsToken, generateCookie, uploadFile, getRegionConfig, parseTokenRegion } from "./core.ts";
 import logger from "@/lib/logger.ts";
 import { IMAGE_MODEL_MAP } from "@/api/routes/models.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
@@ -133,6 +133,7 @@ export async function generateImages(
     negativePrompt = "",
     image,
     images,
+    onProgress,
   }: {
     width?: number;
     height?: number;
@@ -142,6 +143,7 @@ export async function generateImages(
     negativePrompt?: string;
     image?: string; // URL or data URL (base64) - deprecated, use images instead
     images?: string[]; // Array of URLs or data URLs (base64)
+    onProgress?: (message: string) => void; // 进度回调
   },
   refreshToken: string
 ) {
@@ -245,7 +247,11 @@ export async function generateImages(
   const regionCfg = getRegionConfig(refreshToken);
   const isCN = (regionCfg?.countryCode || "").toUpperCase() === "CN";
   const model = getRegionAwareModel(_model, isCN);
-  logger.info(`使用模型: ${_model} 映射模型: ${model} ${finalWidth}x${finalHeight} 分辨率: ${resolutionType} 比例枚举: ${imageRatioEnum} 精细度: ${sampleStrength}`);
+  
+  // 提取 sessionid 用于日志
+  const { token: sessionId } = parseTokenRegion(refreshToken);
+  const displayResolution = resolutionType || "自定义";
+  logger.info(`${sessionId} 使用模型: ${_model} 映射模型: ${model} ${finalWidth}x${finalHeight} 分辨率: ${displayResolution} 比例枚举: ${imageRatioEnum} 精细度: ${sampleStrength}`);
 
   // 图片输入支持：国际区仅 jimeng-3.0；CN 区支持 jimeng-3.0 与 jimeng-4.0
   const allowImage = _model === "jimeng-3.0" || _model === "jimeng-4.0";
@@ -441,12 +447,32 @@ export async function generateImages(
     if (!historyId)
       throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
 
+    // 检查队列信息（CN区域）
+    const queueInfoCN = aigc_data.queue_info;
+    if (queueInfoCN && queueInfoCN.queue_status === 1 && queueInfoCN.queue_length > 0) {
+      // 有真实队列
+      const queueMessage = `🔄 当前生成任务已进入队列，队列位次: ${queueInfoCN.queue_idx}/${queueInfoCN.queue_length}，优先级: ${queueInfoCN.priority}`;
+      logger.info(queueMessage);
+      if (onProgress) {
+        onProgress(queueMessage);
+      }
+    } else {
+      // 没有队列，直接执行
+      const queueMessage = `🔄 正在执行生成任务`;
+      logger.info(queueMessage);
+      if (onProgress) {
+        onProgress(queueMessage);
+      }
+    }
+
     // 🚀 使用智能轮询器（CN区域）
     const poller = new SmartPoller({
       maxPollCount: 600,
       pollInterval: 1000,
       expectedItemCount: 4,
-      type: 'image'
+      type: 'image',
+      sessionId,
+      onProgress // 传递进度回调
     });
 
     const { result: pollingResult, data: finalTaskInfo } = await poller.poll(async () => {
@@ -465,6 +491,7 @@ export async function generateImages(
       
       const entry = result?.[submitIdCN] || {};
       const pollInfo = entry?.queue_info?.polling_config;
+      const currentQueueInfo = entry?.queue_info;
       
       if (!entry || Object.keys(entry).length === 0) {
         throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录不存在");
@@ -472,6 +499,7 @@ export async function generateImages(
       
       const currentStatus = entry.status ?? entry.task?.status ?? 20;
       const currentFailCode = entry.fail_code ?? entry.task?.fail_code;
+      const currentFailMsg = entry.fail_msg ?? entry.task?.fail_msg;
       const currentItemList = entry.item_list ?? entry.task?.item_list ?? [];
       const totalCount = entry.total_image_count ?? 1;
       const finishedCount = entry.finished_image_count ?? 0;
@@ -480,9 +508,11 @@ export async function generateImages(
         status: {
           status: currentStatus,
           failCode: currentFailCode,
+          failMsg: currentFailMsg,
           itemCount: currentItemList.length,
           finishTime: 0,
-          historyId: submitIdCN
+          historyId: submitIdCN,
+          queueInfo: currentQueueInfo
         } as PollingStatus,
         data: entry
       };
@@ -654,7 +684,6 @@ export async function generateImages(
         web_component_open_flag: 1,
         web_version: WEB_VERSION,
         aigc_features: "app_lip_sync",
-        ...(country === "US" && getMsToken(refreshToken) ? { msToken: getMsToken(refreshToken)! } : {}),
       },
       data: {
         extend: {
@@ -710,11 +739,31 @@ export async function generateImages(
   );
 
   // 调试日志：打印核心参数
-  logger.info(`[DEBUG] 请求参数: model=${model}, width=${adjWidth}, height=${adjHeight}, image_ratio=${imageRatioEnum}, resolution_type=${resolutionType}`);
+  const displayResolutionDebug = resolutionType || "自定义";
+  logger.info(`[DEBUG] 请求参数: model=${model}, width=${adjWidth}, height=${adjHeight}, image_ratio=${imageRatioEnum}, resolution_type=${displayResolutionDebug}`);
 
   const historyId = aigc_data.history_record_id;
   if (!historyId)
     throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
+
+  // 检查队列信息
+  const queueInfo = aigc_data.queue_info;
+  let initialQueueMessage: string | undefined;
+  if (queueInfo && queueInfo.queue_status === 1 && queueInfo.queue_length > 0) {
+    // 有真实队列
+    initialQueueMessage = `🔄 当前生成任务已进入队列，队列位次: ${queueInfo.queue_idx}/${queueInfo.queue_length}，优先级: ${queueInfo.priority}`;
+    logger.info(initialQueueMessage);
+    if (onProgress) {
+      onProgress(initialQueueMessage);
+    }
+  } else {
+    // 没有队列，直接执行
+    initialQueueMessage = `🔄 正在执行生成任务`;
+    logger.info(initialQueueMessage);
+    if (onProgress) {
+      onProgress(initialQueueMessage);
+    }
+  }
 
   // 🚀 使用智能轮询器（国际区域）
   const historyApiHost = regionCfg?.mwebHost || "https://mweb-api-sg.capcut.com";
@@ -724,7 +773,9 @@ export async function generateImages(
     maxPollCount: 600,
     pollInterval: 1000,
     expectedItemCount: 4,
-    type: 'image'
+    type: 'image',
+    sessionId,
+    onProgress // 传递进度回调
   });
 
   const { result: pollingResult, data: finalTaskInfo } = await poller.poll(async () => {
@@ -767,15 +818,19 @@ export async function generateImages(
     const entry = result[pollKey];
     const currentStatus = entry.status;
     const currentFailCode = entry.fail_code;
+    const currentFailMsg = entry.fail_msg;
     const currentItemList = entry.item_list || [];
+    const currentQueueInfo = entry.queue_info;
 
     return {
       status: {
         status: currentStatus,
         failCode: currentFailCode,
+        failMsg: currentFailMsg,
         itemCount: currentItemList.length,
         finishTime: 0,
-        historyId: pollKey
+        historyId: pollKey,
+        queueInfo: currentQueueInfo
       } as PollingStatus,
       data: entry
     };

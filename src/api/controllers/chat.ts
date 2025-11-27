@@ -7,6 +7,7 @@ import logger from "@/lib/logger.ts";
 import util from "@/lib/util.ts";
 import { generateImages, DEFAULT_MODEL } from "./images.ts";
 import { generateVideo, DEFAULT_VIDEO_MODEL } from "./videos.ts";
+import { parseTokenRegion } from "./core.ts";
 
 // 最大重试次数
 const MAX_RETRY_COUNT = 3;
@@ -121,25 +122,31 @@ export async function createCompletion(
     if (isVideoModel(_model)) {
       logger.info("检测到视频模型，使用视频生成");
 
-      // 视频生成需要首帧图片
-      if (!images || images.length === 0) {
-        throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "视频生成需要提供首帧图片");
-      }
-
-      // 支持首尾帧模式：如果提供了两张图片，第二张作为结束帧
-      const videoParams: any = {
-        firstFrameImage: images[0],
-      };
+      // 构建视频参数（支持文生视频、图生视频、首尾帧模式）
+      const videoParams: any = {};
       
-      if (images.length >= 2) {
-        videoParams.endFrameImage = images[1];
-        logger.info(`检测到 ${images.length} 张图片，使用首尾帧模式`);
+      if (images && images.length > 0) {
+        // 有图片：图生视频或首尾帧模式
+        videoParams.firstFrameImage = images[0];
+        
+        if (images.length >= 2) {
+          // 只有 video3 支持首尾帧模式
+          if (_model !== "jimeng-video-3.0") {
+            logger.warn(`模型 ${_model} 不支持首尾帧模式，忽略尾帧，仅使用第一张图片生成视频`);
+          } else {
+            videoParams.endFrameImage = images[1];
+            logger.info(`检测到 ${images.length} 张图片，使用首尾帧模式`);
+          }
+        } else {
+          logger.info("检测到1张图片，使用图生视频模式");
+        }
+        
+        if (images.length > 2) {
+          logger.warn(`提供了 ${images.length} 张图片，但视频生成最多支持2张（首帧+尾帧），其余图片将被忽略`);
+        }
       } else {
-        logger.info("仅提供了1张图片，使用首帧模式");
-      }
-      
-      if (images.length > 2) {
-        logger.warn(`提供了 ${images.length} 张图片，但视频生成最多支持2张（首帧+尾帧），其余图片将被忽略`);
+        // 无图片：文生视频模式
+        logger.info("未检测到图片，使用文生视频模式");
       }
 
       const videoUrls = await generateVideo(
@@ -244,13 +251,35 @@ export async function createCompletionStream(
   if (isVideoModel(_model)) {
     logger.info("检测到视频模型，使用视频生成（真流式）");
 
-    // 视频生成需要首帧图片
-    if (!images || images.length === 0) {
-      throw new APIException(EX.API_REQUEST_PARAMS_INVALID, "视频生成需要提供首帧图片");
-    }
-
     // 🚀 立即创建流并返回
     const stream = new PassThrough();
+
+    // 构建视频参数（支持文生视频、图生视频、首尾帧模式）
+    const videoParams: any = {};
+    
+    if (images && images.length > 0) {
+      // 有图片：图生视频或首尾帧模式
+      videoParams.firstFrameImage = images[0];
+      
+      if (images.length >= 2) {
+        // 只有 video3 支持首尾帧模式
+        if (_model !== "jimeng-video-3.0") {
+          logger.warn(`⚠️ [流式] 模型 ${_model} 不支持首尾帧模式，忽略尾帧，仅使用第一张图片生成视频`);
+        } else {
+          videoParams.endFrameImage = images[1];
+          logger.info(`✅ [流式] 检测到 ${images.length} 张图片，使用首尾帧模式`);
+        }
+      } else {
+        logger.info(`✅ [流式] 检测到1张图片，使用图生视频模式`);
+      }
+      
+      if (images.length > 2) {
+        logger.warn(`⚠️ [流式] 提供了 ${images.length} 张图片，但视频生成最多支持2张（首帧+尾帧），其余图片将被忽略`);
+      }
+    } else {
+      // 无图片：文生视频模式
+      logger.info(`✅ [流式] 未检测到图片，使用文生视频模式`);
+    }
 
     // 立即推送初始消息
     stream.write(
@@ -262,7 +291,7 @@ export async function createCompletionStream(
           choices: [
             {
               index: 0,
-              delta: { role: "assistant", content: "🎬 视频生成中，请稍候...\n这可能需要1-5分钟，请耐心等待" },
+              delta: { role: "assistant", reasoning_content: "🎬 视频生成中，请稍候...\n这可能需要1-5分钟，请耐心等待\n" },
               finish_reason: null,
             },
           ],
@@ -270,12 +299,33 @@ export async function createCompletionStream(
         "\n\n"
     );
 
-    // 🔄 异步执行视频生成
+    // 🔄 异步执行视频生成，带进度回调
     generateVideo(
       _model,
       promptText,
       {
-        firstFrameImage: images[0],
+        ...videoParams,
+        onProgress: (message: string) => {
+          // 通过reasoning_content返回进度信息
+          if (!stream.destroyed && stream.writable) {
+            stream.write(
+              "data: " +
+                JSON.stringify({
+                  id: util.uuid(),
+                  model: _model,
+                  object: "chat.completion.chunk",
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { reasoning_content: message + "\n" },
+                      finish_reason: null,
+                    },
+                  ],
+                }) +
+                "\n\n"
+            );
+          }
+        }
       },
       refreshToken
     )
@@ -356,7 +406,7 @@ export async function createCompletionStream(
         choices: [
           {
             index: 0,
-            delta: { role: "assistant", content: "🎨 图像生成中，请稍候..." },
+            delta: { role: "assistant", reasoning_content: "🎨 图像生成中，请稍候...\n" },
             finish_reason: null,
           },
         ],
@@ -364,8 +414,33 @@ export async function createCompletionStream(
       "\n\n"
   );
 
-  // 🔄 异步执行图像生成
-  generateImages(model, promptText, { width, height, images }, refreshToken)
+  // 🔄 异步执行图像生成，带进度回调
+  generateImages(model, promptText, {
+    width,
+    height,
+    images,
+    onProgress: (message: string) => {
+      // 通过reasoning_content返回进度信息
+      if (!stream.destroyed && stream.writable) {
+        stream.write(
+          "data: " +
+            JSON.stringify({
+              id: util.uuid(),
+              model: _model || model,
+              object: "chat.completion.chunk",
+              choices: [
+                {
+                  index: 0,
+                  delta: { reasoning_content: message + "\n" },
+                  finish_reason: null,
+                },
+              ],
+            }) +
+            "\n\n"
+        );
+      }
+    }
+  }, refreshToken)
     .then((imageUrls) => {
       // 检查流是否仍然可写
       if (!stream.destroyed && stream.writable) {

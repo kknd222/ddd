@@ -45,36 +45,6 @@ const WEB_ID = Math.random() * 999999999999999999 + 7000000000000000000;
 // 用户ID
 const USER_ID = util.uuid(false);
 
-/**
- * 生成 sid_guard cookie 值
- * 格式: {token}%7C{timestamp}%7C{expiry}%7C{date}
- */
-function generateSidGuard(token: string): string {
-  const now = Math.floor(Date.now() / 1000);
-  const expiry = 5184000; // 60天
-  const expiryDate = new Date((now + expiry) * 1000);
-
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-  const dayName = days[expiryDate.getUTCDay()];
-  const day = String(expiryDate.getUTCDate()).padStart(2, '0');
-  const month = months[expiryDate.getUTCMonth()];
-  const year = expiryDate.getUTCFullYear();
-  const hours = String(expiryDate.getUTCHours()).padStart(2, '0');
-  const minutes = String(expiryDate.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(expiryDate.getUTCSeconds()).padStart(2, '0');
-
-  const dateStr = `${dayName},+${day}-${month}-${year}+${hours}:${minutes}:${seconds}+GMT`;
-
-  // URL encode: | -> %7C
-  return `${token}%7C${now}%7C${expiry}%7C${dateStr}`;
-}
-
-// msToken（由 user_info 接口下发的校验 Cookie）
-const MS_TOKEN_MAP = new Map<string, string>();
-export function getMsToken(refreshToken: string) { return MS_TOKEN_MAP.get(refreshToken) || null; }
-
 type RegionConfig = {
   countryCode: string; // e.g. US, EG
   webIdc?: string;     // e.g. useast5, sg1
@@ -87,18 +57,35 @@ type RegionConfig = {
 };
 const REGION_CFG_MAP = new Map<string, RegionConfig>();
 export function getRegionConfig(refreshToken: string): RegionConfig | null {
+  // 检查是否有 CN 后缀（如 token:cn）
+  const { region: tokenRegion } = parseTokenRegion(refreshToken);
+  if (tokenRegion && tokenRegion.toUpperCase() === "CN") {
+    return {
+      countryCode: 'CN',
+      webIdc: 'cn1',
+      regionKey: 'cn',
+      mwebHost: 'https://jimeng.jianying.com',
+      webDomain: 'https://jimeng.jianying.com',
+      commerceDomain: 'https://jimeng.jianying.com',
+      frontierDomain: undefined,
+      ttsDomain: undefined,
+    };
+  }
+  
+  // 非CN区域：从缓存中获取，如果没有则返回默认 US 配置
   const cfg = REGION_CFG_MAP.get(refreshToken);
   if (cfg) return cfg;
-  // Fallback: default to US region when not resolved yet
+  
+  // Fallback: 默认 US 配置（等待 user_info 更新）
   return {
     countryCode: 'US',
-    webIdc: undefined,
+    webIdc: 'useast5',
     regionKey: 'us',
     mwebHost: 'https://dreamina-api.us.capcut.com',
     webDomain: undefined,
-    commerceDomain: undefined,
-    frontierDomain: undefined,
-    ttsDomain: undefined,
+    commerceDomain: 'https://commerce.us.capcut.com',
+    frontierDomain: 'wss://frontier.us.capcut.com',
+    ttsDomain: 'wss://web-edit.us.capcut.com',
   };
 }
 // 最大重试次数
@@ -141,104 +128,264 @@ const FILE_MAX_SIZE = 100 * 1024 * 1024;
  * @param refreshToken 用于刷新access_token的refresh_token
  */
 export async function acquireToken(refreshToken: string): Promise<string> {
-  const { token } = parseTokenRegion(refreshToken);
-  return token;
+  // 直接返回传入的 sessionid
+  return refreshToken;
+}
+
+/**
+ * 生成 verifyFp 指纹参数
+ * 格式: verify_{timestamp36}_{uuid}
+ */
+function generateVerifyFp(): string {
+  const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".split("");
+  const charsLen = chars.length;
+  const uuid: string[] = [];
+  
+  // 固定位置的字符
+  uuid[8] = uuid[13] = uuid[18] = uuid[23] = "_";
+  uuid[14] = "4";
+  
+  // 随机填充其他位置
+  for (let i = 0; i < 36; i++) {
+    if (!uuid[i]) {
+      const randomIdx = Math.floor(Math.random() * charsLen);
+      // 第19位特殊处理
+      uuid[i] = chars[i === 19 ? (randomIdx & 0x3 | 0x8) : randomIdx];
+    }
+  }
+  
+  // 时间戳转36进制
+  const timestamp36 = Date.now().toString(36);
+  
+  // 组合最终指纹
+  return `verify_${timestamp36}_${uuid.join('')}`;
+}
+
+/**
+ * 对邮箱进行哈希
+ * @param email 邮箱地址
+ * @returns SHA256 哈希值
+ */
+function hashEmail(email: string): string {
+  const salt = "aDy0TUhtql92P7hScCs97YWMT-jub2q9";
+  return crypto.createHash("sha256")
+    .update(email + salt)
+    .digest("hex");
+}
+
+/**
+ * 解析 token，支持多种格式：
+ * 1. base64(邮箱,sessionid) - 推荐格式
+ * 2. email:token 或 token:email - 兼容格式
+ * 3. token - 纯 token 格式
+ */
+function parseTokenWithEmail(refreshToken: string): { token: string; email?: string } {
+  // 尝试 base64 解码（推荐格式）
+  try {
+    const decoded = Buffer.from(refreshToken, 'base64').toString('utf-8');
+    // 检查是否为 "邮箱,sessionid" 格式
+    if (decoded.includes(',') && decoded.includes('@')) {
+      const commaIndex = decoded.indexOf(',');
+      const email = decoded.substring(0, commaIndex);
+      const token = decoded.substring(commaIndex + 1);
+      // 验证邮箱格式
+      if (email.includes('@') && token.length > 0) {
+        return { token, email };
+      }
+    }
+  } catch (e) {
+    // 解码失败，继续尝试其他格式
+  }
+  
+  // 兼容旧格式：email:token 或 token:email
+  const parts = refreshToken.split(":");
+  if (parts.length >= 2) {
+    // 检查哪个部分像邮箱
+    if (parts[0].includes("@")) {
+      return { token: parts[1], email: parts[0] };
+    } else if (parts[1].includes("@")) {
+      return { token: parts[0], email: parts[1] };
+    }
+  }
+  
+  // 默认：纯 token 格式
+  return { token: refreshToken };
+}
+
+/**
+ * 通过 passport/web/region 接口快速获取 msToken、toIdc 和 countryCode
+ * 这个接口主要用于获取 msToken 和 IDC 信息，速度更快
+ * 
+ * @param refreshToken refresh token (支持多种格式)
+ * @returns 返回 { msToken, toIdc, countryCode } 或 null
+ */
+async function fetchMsTokenAndIdc(refreshToken: string): Promise<{ msToken?: string; toIdc?: string; countryCode?: string } | null> {
+  try {
+    const { token: baseToken, email } = parseTokenWithEmail(refreshToken);
+    
+    // 如果没有提供邮箱，使用默认占位邮箱
+    const emailToUse = email || "guest@capcut.com";
+    const hashedId = hashEmail(emailToUse.toLowerCase().trim());
+    const verifyFp = generateVerifyFp();
+    
+    // 使用官方域名 login.us.capcut.com
+    const url = new URL("https://login.us.capcut.com/passport/web/region/");
+    url.searchParams.set("aid", DEFAULT_ASSISTANT_ID);
+    url.searchParams.set("account_sdk_source", "web");
+    url.searchParams.set("sdk_version", "2.1.10-tiktok");
+    url.searchParams.set("language", "en");
+    url.searchParams.set("verifyFp", verifyFp);
+    url.searchParams.set("mix_mode", "1");
+
+    const headers = {
+      ...FAKE_HEADERS,
+      "accept": "application/json, text/plain, */*",
+      "appid": DEFAULT_ASSISTANT_ID,
+      "content-type": "application/x-www-form-urlencoded",
+      "cache-control": "no-cache",
+      "pragma": "no-cache",
+      "origin": "https://dreamina.capcut.com",
+      "referer": "https://dreamina.capcut.com/",
+      "did": String(DEVICE_ID),
+      "store-country-code-src": "cdn"
+    } as Record<string, string>;
+    
+    logger.info(`🌍 通过 passport/web/region 获取信息... (email: ${emailToUse})`);
+    
+    const resp = await axios.request({
+      method: "POST",
+      url: url.toString(),
+      data: `type=2&hashed_id=${hashedId}`,
+      headers,
+      timeout: 15000,
+      validateStatus: () => true,
+    });
+    
+    if (resp.status !== 200 || resp.data?.message !== "success") {
+      logger.warn(`passport/web/region 请求失败: ${resp.status} ${JSON.stringify(resp.data)}`);
+      return null;
+    }
+    
+    // 从响应数据提取 country_code
+    const data = resp.data?.data;
+    const countryCode = (data?.country_code || "").toLowerCase() || "us";
+    
+    // 从响应头提取 to-idc (如 sg1, useast5, alisg)
+    const toIdc = resp.headers?.["to-idc"] || undefined;
+    
+    // 从 Set-Cookie 提取 msToken
+    let msToken: string | undefined;
+    const setCookies = resp.headers?.["set-cookie"] as string[] | undefined;
+    if (setCookies && setCookies.length) {
+      const msTokenPair = setCookies
+        .flatMap((sc) => sc.split(";"))
+        .find((kv) => kv.trim().startsWith("msToken="));
+      if (msTokenPair) {
+        msToken = msTokenPair.trim().split("=")[1];
+        logger.info(`✅ msToken 已获取: ${msToken.substring(0, 20)}...`);
+      }
+    }
+    
+    if (toIdc) {
+      logger.info(`✅ toIdc 已获取: ${toIdc}`);
+    }
+    
+    if (countryCode) {
+      logger.info(`✅ countryCode 已获取: ${countryCode}`);
+    }
+    
+    return { msToken, toIdc, countryCode };
+  } catch (err) {
+    logger.warn("passport/web/region 请求失败:", err);
+    return null;
+  }
 }
 
 /**
  * 生成cookie
- * 海外区域使用优化的 cookie 组合: cc-target-idc + sid_guard + sessionid
+ * 海外区域使用优化的 cookie 组合: sessionid + cc-target-idc
  * CN 区域使用 jimeng-free-api 的 cookie 格式
  */
 export function generateCookie(refreshToken: string, region?: string) {
-  const { token: baseToken } = parseTokenRegion(refreshToken);
-  const regionUpper = (region || "").toUpperCase();
-  const cfg = getRegionConfig(refreshToken);
+  // 解析 token，提取纯 sessionid 和区域后缀
+  const { token: sessionId, region: tokenRegion } = parseTokenRegion(refreshToken);
+  const finalRegion = tokenRegion || region || "";
+  const regionUpper = finalRegion.toUpperCase();
 
   // CN 区域：使用 jimeng-free-api 的 cookie 格式
   if (regionUpper === "CN") {
     const cookieParts = [
       `_tea_web_id=${WEB_ID}`,
       `is_staff_user=false`,
-      `sid_guard=${generateSidGuard(baseToken)}`,
       `uid_tt=${USER_ID}`,
       `uid_tt_ss=${USER_ID}`,
-      `sid_tt=${baseToken}`,
-      `sessionid=${baseToken}`,
-      `sessionid_ss=${baseToken}`,
+      `sid_tt=${sessionId}`,
+      `sessionid=${sessionId}`,
+      `sessionid_ss=${sessionId}`,
       `store-region=cn-gd`,
       `store-region-src=uid`,
     ];
     return cookieParts.join("; ");
   }
 
-  // 海外区域：使用优化的 cookie 组合
-  // cc-target-idc + sid_guard 是必需的，sessionid 用于任务跟踪
-  const idc = cfg?.webIdc || (regionUpper === "US" ? "useast5" : "alisg");
+  // 非CN区域：使用优化的 cookie 组合
+  // sessionid + cc-target-idc 是必需的
+  // 所有非CN区域固定使用 useast5
   const cookieParts = [
-    `cc-target-idc=${idc}`,
-    `sid_guard=${generateSidGuard(baseToken)}`,
-    `sessionid=${baseToken}`,
-    `sessionid_ss=${baseToken}`,
+    `sessionid=${sessionId}`,
+    `sessionid_ss=${sessionId}`,
+    `cc-target-idc=useast5`,
   ];
 
   return cookieParts.join("; ");
 }
 
-/**
- * 预拉取 msToken（每次生成图片前调用）
- *
- * 说明：请求 dreamina.capcut.com 的 user_info 接口，
- * 读取响应头 Set-Cookie 中的 msToken 并缓存，用于后续请求拼接到 Cookie。
- */
 export async function ensureMsToken(refreshToken: string) {
-  // 区域后缀覆盖（如 token:cn），CN 无 user_info，直接配置区域映射并返回
+  // CN 区域：通过 token 后缀识别，不调用 user_info
   const { region: overrideRegion } = parseTokenRegion(refreshToken);
   if (overrideRegion && overrideRegion.toUpperCase() === "CN") {
-    const cnCfg: RegionConfig = {
-      countryCode: "CN",
-      webIdc: "cn1",
-      regionKey: "cn",
-      // jimeng-free-api 以 jimeng.jianying.com 为统一域
-      mwebHost: "https://jimeng.jianying.com",
-      webDomain: "https://jimeng.jianying.com",
-      commerceDomain: "https://jimeng.jianying.com",
-      frontierDomain: undefined,
-      ttsDomain: undefined,
-    };
-    REGION_CFG_MAP.set(refreshToken, cnCfg);
+    return; // CN 区域不需要调用 user_info
+  }
+  
+  // 检查是否已有配置，避免重复请求
+  if (REGION_CFG_MAP.has(refreshToken)) {
     return;
   }
+  
+  // 非CN区域：通过 user_info 接口获取域名配置
+  // 并发尝试多个地区，找到第一个返回 errmsg: "success" 的
   const uri = "/lv/v1/user/web/user_info";
   const url = `https://dreamina.capcut.com${uri}`;
   const deviceTime = util.unixTimestamp();
-  const sign = util.md5(`9e2c|${uri.slice(-7)}|${PLATFORM_CODE}|${VERSION_CODE}|${deviceTime}||11ac`);
+  const signString = `9e2c|${uri.slice(-7)}|${PLATFORM_CODE}|${VERSION_CODE}|${deviceTime}||11ac`;
+  const sign = util.md5(signString);
+  
+  // 提取纯 sessionid
+  const { token: sessionId } = parseTokenRegion(refreshToken);
+  
+  // 要尝试的 cc-target-idc 列表
+  const idcList = ['alisg', 'hk', 'useast5', 'sg1'];
+  
+  // 创建所有请求的 Promise
+  const requests = idcList.map(idc => {
+    const cookieStr = `sessionid=${sessionId}; sessionid_ss=${sessionId}; cc-target-idc=${idc}`;
 
-  // 使用最小 cookie 组合: cc-target-idc + sid_guard
-  const { token: baseToken } = parseTokenRegion(refreshToken);
-  const cookieStr = `cc-target-idc=useast5; sid_guard=${generateSidGuard(baseToken)}`;
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Encoding": "gzip, deflate, br, zstd",
+      "Content-Type": "application/json",
+      "appid": DEFAULT_ASSISTANT_ID,
+      "sec-ch-ua-platform": '"Windows"',
+      "device-time": String(deviceTime),
+      "sign-ver": "1",
+      "appvr": VERSION_CODE,
+      "sign": sign,
+      "pf": PLATFORM_CODE,
+      "Cookie": cookieStr,
+    } as Record<string, string | number>;
 
-  const headers = {
-    ...FAKE_HEADERS,
-    // 与示例保持一致但来源于已有常量或计算
-    "App-Sdk-Version": APP_SDK_VERSION,
-    Appid: DEFAULT_ASSISTANT_ID,
-    Appvr: VERSION_CODE,
-    Pf: PLATFORM_CODE,
-    Origin: "https://dreamina.capcut.com",
-    Referer: "https://dreamina.capcut.com/ai-tool/home",
-    Cookie: cookieStr,
-    "Cache-Control": "no-cache",
-    Pragma: "no-cache",
-    "Device-Time": deviceTime,
-    Sign: sign,
-    "Sign-Ver": "1",
-    Did: String(DEVICE_ID),
-    "Content-Type": "application/json"
-  } as Record<string, string | number>;
-
-  try {
-    const resp = await axios.request({
+    return axios.request({
       method: "POST",
       url,
       data: {
@@ -252,35 +399,47 @@ export async function ensureMsToken(refreshToken: string) {
       headers,
       timeout: 15000,
       validateStatus: () => true,
-    });
+    }).then(resp => ({
+      idc,
+      success: resp.status === 200 && resp.data?.errmsg === "success",
+      response: resp,
+    })).catch(err => ({
+      idc,
+      success: false,
+      error: err,
+    }));
+  });
+  
+  // 并发执行所有请求
+  const results = await Promise.all(requests);
+  
+  // 不记录失败结果，避免日志过多
+  
+  // 找到第一个成功的响应
+  const successResult = results.find(r => r.success);
+  
+  // 如果所有地区都失败，抛出异常
+  if (!successResult) {
+    const errorMsg = `所有地区 (${idcList.join(', ')}) 请求都失败了，请检查 token 是否正确`;
+    logger.error(`❌ ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+  
+  const resp = (successResult as any).response;
+  logger.info(`✅ ${sessionId} 使用地区 [${successResult.idc}] 的配置`);
 
-    const setCookies = resp.headers?.["set-cookie"] as string[] | undefined;
-    if (setCookies && setCookies.length) {
-      const tokenPair = setCookies
-        .flatMap((sc) => sc.split(";"))
-        .find((kv) => kv.trim().startsWith("msToken="));
-      if (tokenPair) {
-        const ms = tokenPair.trim().split("=")[1];
-        MS_TOKEN_MAP.set(refreshToken, ms);
-        logger.info("msToken 已获取");
-      } else {
-        logger.warn("未在 Set-Cookie 中找到 msToken");
-      }
-    } else {
-      logger.warn("响应未包含 Set-Cookie，无法获取 msToken");
-    }
-
-    // 提取区域与域名信息，避免硬编码
+    // 提取区域与域名信息
     const data = resp.data?.data;
     const rawCountry = (data?.location?.code || "").toString().toUpperCase();
-    const countryCode = rawCountry || "US"; // 若缺失则默认 US
-    const webIdc = data?.location?.web_idc || undefined;
+    const countryCode = rawCountry || "US";
+    const webIdc = data?.location?.web_idc || "useast5";
     const webDomain: string | undefined = data?.location?.domain?.web_domain;
     const commerceDomain: string | undefined = data?.location?.domain?.commerce_domain;
     const frontierDomain: string | undefined = data?.location?.domain?.frontier_domain;
     const ttsDomain: string | undefined = data?.location?.domain?.tts_domain;
     let regionKey: string | undefined;
     let mwebHost: string | undefined;
+    
     if (webDomain) {
       // 形如 edit-api-sg.capcut.com 或 edit-api-us.capcut.com
       const m = webDomain.match(/edit-api-([^.]+)\.capcut\.com$/);
@@ -291,9 +450,10 @@ export async function ensureMsToken(refreshToken: string) {
           : `https://mweb-api-${regionKey}.capcut.com`;
       }
     }
-    // 当 user_info 未返回域名时，按国家兜底 mweb 主机
+    
+    // 兜底逻辑
     if (!mwebHost) {
-      if (countryCode.toUpperCase() === 'US') {
+      if (countryCode === 'US') {
         mwebHost = 'https://dreamina-api.us.capcut.com';
       } else if (regionKey) {
         mwebHost = `https://mweb-api-${regionKey}.capcut.com`;
@@ -301,6 +461,7 @@ export async function ensureMsToken(refreshToken: string) {
         mwebHost = 'https://mweb-api-sg.capcut.com';
       }
     }
+    
     const cfg: RegionConfig = {
       countryCode,
       webIdc,
@@ -311,13 +472,9 @@ export async function ensureMsToken(refreshToken: string) {
       frontierDomain,
       ttsDomain,
     };
+    
     REGION_CFG_MAP.set(refreshToken, cfg);
-    logger.info("区域信息:", cfg);
-
-    // 已移除自动获取 tt-target-idc-sign 的逻辑
-  } catch (err) {
-    logger.warn("获取 msToken 失败", err);
-  }
+    logger.info("✅ 区域配置已从 user_info 更新:", cfg);
 }
 
 /**
@@ -417,29 +574,13 @@ export async function request(
   const isMwebHost = /mweb-api/.test(url);
   const isJimengHost = url.includes("jimeng.jianying.com");
   const regionParam = (options.params as any)?.region as string | undefined;
-  logger.info(
-    "request function: | token:", token,
-    " | uri:", url,
-    " | sign:", sign, 
-    " | deviceTime:", deviceTime
-    )
   const paramsObj = {
     aid: isJimengHost ? CN_ASSISTANT_ID : DEFAULT_ASSISTANT_ID,
     device_platform: "web",
     ...(isJimengHost ? { webId: WEB_ID } : { web_id: WEB_ID }),
     ...(options.params || {}),
   } as Record<string, any>;
-  try {
-    logger.info(
-      "request params:", JSON.stringify({
-        host: isJimengHost ? "jimeng" : (isMwebHost ? "mweb" : "other"),
-        region: regionParam,
-        aid: paramsObj.aid,
-        webId: paramsObj.webId || paramsObj.web_id,
-        keys: Object.keys(paramsObj),
-      })
-    );
-  } catch {}
+  
   const response = await axios.request({
     method,
     url,
@@ -632,7 +773,7 @@ export async function getUploadToken(refreshToken: string, country?: string) {
     da_version: "3.2.8",
     aigc_features: "app_lip_sync",
     ...(country ? { region: country } : {}),
-    ...(cfg?.countryCode === "US" && getMsToken(refreshToken) ? { msToken: getMsToken(refreshToken)! } : {}),
+    msToken: await ensureMsToken(refreshToken)
   };
   // 网络偶发 TLS 握手失败，做少量重试
   let lastErr: any;
@@ -912,7 +1053,7 @@ async function commitImageUpload({
 /**
  * 解析 refreshToken 可选区域后缀（例如 "<token>:cn"）
  */
-function parseTokenRegion(refreshToken: string): { token: string; region?: string } {
+export function parseTokenRegion(refreshToken: string): { token: string; region?: string } {
   const m = refreshToken?.match(/^(.*?):([a-zA-Z]+)$/);
   if (m) return { token: m[1], region: m[2] };
   return { token: refreshToken };

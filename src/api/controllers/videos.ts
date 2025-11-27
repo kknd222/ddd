@@ -3,14 +3,14 @@ import _ from "lodash";
 import APIException from "@/lib/exceptions/APIException.ts";
 import EX from "@/api/consts/exceptions.ts";
 import util from "@/lib/util.ts";
-import { getCredit, receiveCredit, request, ensureMsToken, uploadFile, getMsToken, getRegionConfig } from "./core.ts";
+import { getCredit, receiveCredit, request, ensureMsToken, uploadFile, getRegionConfig, parseTokenRegion } from "./core.ts";
 import logger from "@/lib/logger.ts";
 import { VIDEO_MODEL_MAP } from "@/api/routes/models.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 
 const DEFAULT_ASSISTANT_ID = "513641";
 const CN_ASSISTANT_ID = "513695";
-export const DEFAULT_VIDEO_MODEL = "jimeng-video-3.0";
+export const DEFAULT_VIDEO_MODEL = "jimeng-video-3.0-fast";
 // 草稿最小版本
 const DRAFT_VERSION = "3.0.5";
 // 数据层版本
@@ -91,6 +91,7 @@ export async function generateVideo(
     fps = 24,
     duration,
     videoMode = 2,
+    onProgress,
   }: {
     firstFrameImage?: string; // URL or data URL (base64)
     endFrameImage?: string; // URL or data URL (base64) for first_last_frames mode
@@ -98,6 +99,7 @@ export async function generateVideo(
     fps?: number; // 24
     duration?: number; // 5 or 10 seconds
     videoMode?: number; // 2 for first_frame mode
+    onProgress?: (message: string) => void; // 进度回调
   },
   refreshToken: string
 ) {
@@ -133,6 +135,7 @@ export async function generateVideo(
   const hasFirstFrame = !!firstFrameImage;
   const hasEndFrame = !!endFrameImage;
   let detectedMode: string;
+  let actualEndFrameImage = endFrameImage; // 实际使用的尾帧图片
 
   if (!hasFirstFrame && !hasEndFrame) {
     detectedMode = "文生视频";
@@ -142,7 +145,15 @@ export async function generateVideo(
     logger.info("模式：图生视频（单张首帧图片）");
   } else if (hasFirstFrame && hasEndFrame) {
     detectedMode = "首尾帧视频";
-    logger.info("模式：首尾帧视频（首帧+尾帧图片）");
+    
+    // 只有 video3 支持首尾帧模式
+    if (_model !== "jimeng-video-3.0") {
+      logger.warn(`模型 ${_model} 不支持首尾帧模式，忽略尾帧图片，仅使用首帧`);
+      actualEndFrameImage = undefined; // 忽略尾帧
+      detectedMode = "图生视频（尾帧已忽略）";
+    } else {
+      logger.info("模式：首尾帧视频（首帧+尾帧图片）");
+    }
   }
 
   logger.info(
@@ -171,11 +182,11 @@ export async function generateVideo(
     }
   }
 
-  // 上传尾帧图片（如果提供）
+  // 上传尾帧图片（如果提供且模型支持）
   let uploadedEndImage: { storeUri: string; width?: number; height?: number; mimeType?: string } | undefined;
-  if (endFrameImage) {
+  if (actualEndFrameImage) {
     try {
-      uploadedEndImage = await uploadFile(endFrameImage, refreshToken, false, country);
+      uploadedEndImage = await uploadFile(actualEndFrameImage, refreshToken, false, country);
       logger.info(`尾帧图片已上传: ${uploadedEndImage.storeUri}, 尺寸: ${uploadedEndImage.width}x${uploadedEndImage.height}`);
     } catch (e) {
       throw new APIException(
@@ -309,7 +320,6 @@ export async function generateVideo(
         web_component_open_flag: 1,
         web_version: WEB_VERSION,
         aigc_features: "app_lip_sync",
-        ...(country === "US" && getMsToken(refreshToken) ? { msToken: getMsToken(refreshToken)! } : {}),
       },
       data: {
         extend: {
@@ -360,14 +370,35 @@ export async function generateVideo(
     throw new APIException(EX.API_IMAGE_GENERATION_FAILED, "记录ID不存在");
   }
 
+  // 检查队列信息
+  const queueInfo = aigc_data.queue_info;
+  if (queueInfo && queueInfo.queue_status === 1 && queueInfo.queue_length > 0) {
+    // 有真实队列
+    const queueMessage = `🔄 当前生成任务已进入队列，队列位次: ${queueInfo.queue_idx}/${queueInfo.queue_length}，优先级: ${queueInfo.priority}`;
+    logger.info(queueMessage);
+    if (onProgress) {
+      onProgress(queueMessage);
+    }
+  } else {
+    // 没有队列，直接执行
+    const queueMessage = `🔄 正在执行生成任务`;
+    logger.info(queueMessage);
+    if (onProgress) {
+      onProgress(queueMessage);
+    }
+  }
+
   // 🚀 使用智能轮询器（视频生成）
+  const { token: sessionId } = parseTokenRegion(refreshToken);
   logger.info(`开始智能轮询视频生成状态, historyId: ${historyId}, submitId: ${submitId}`);
 
   const poller = new SmartPoller({
     maxPollCount: 900, // 视频生成时间较长，最多轮询900次（30分钟）
     pollInterval: 2000, // 视频生成较慢，使用2秒基础间隔
     expectedItemCount: 1,
-    type: 'video'
+    type: 'video',
+    sessionId,
+    onProgress // 传递进度回调
   });
 
   const { result: pollingResult, data: finalTaskInfo } = await poller.poll(async () => {
@@ -394,15 +425,19 @@ export async function generateVideo(
     const entry = result[submitId];
     const currentStatus = entry.status ?? entry.task?.status ?? 20;
     const currentFailCode = entry.fail_code ?? entry.task?.fail_code;
+    const currentFailMsg = entry.fail_msg ?? entry.task?.fail_msg;
     const currentItemList = entry.item_list ?? entry.task?.item_list ?? [];
+    const currentQueueInfo = entry.queue_info;
 
     return {
       status: {
         status: currentStatus,
         failCode: currentFailCode,
+        failMsg: currentFailMsg,
         itemCount: currentItemList.length,
         finishTime: 0,
-        historyId: submitId
+        historyId: submitId,
+        queueInfo: currentQueueInfo
       } as PollingStatus,
       data: entry
     };

@@ -7,7 +7,7 @@ import APIException from "@/lib/exceptions/APIException.ts";
 import EX from "@/api/consts/exceptions.ts";
 import logger from "@/lib/logger.ts";
 import util from "@/lib/util.ts";
-import { request, ensureMsToken, getRegionConfig, getCredit, receiveCredit } from "@/api/controllers/core.ts";
+import { request, ensureMsToken, getRegionConfig, getCredit, receiveCredit, parseTokenRegion } from "@/api/controllers/core.ts";
 import { SmartPoller, PollingStatus } from "@/lib/smart-poller.ts";
 
 // 最大重试次数与重试间隔
@@ -43,12 +43,14 @@ async function pollToolResult(submitId: string, resourceType: string, refreshTok
   const regionCfg = getRegionConfig(refreshToken);
   const country = (regionCfg?.countryCode || "US").toUpperCase();
   const apiHost = regionCfg?.mwebHost || "https://mweb-api-sg.capcut.com";
+  const { token: sessionId } = parseTokenRegion(refreshToken);
   
   const poller = new SmartPoller({
     maxPollCount: resourceType === 'video' ? 900 : 600,
     pollInterval: resourceType === 'video' ? 2000 : 1000,
     expectedItemCount: 1,
-    type: resourceType === 'video' ? 'video' : 'image'
+    type: resourceType === 'video' ? 'video' : 'image',
+    sessionId
   });
 
   let retryCount = 0;
